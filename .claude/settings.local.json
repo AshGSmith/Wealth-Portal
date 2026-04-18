@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx create-next-app@latest . --typescript --tailwind --eslint --app --src-dir --import-alias \"@/*\" --yes)",
+      "Bash(npx create-next-app@latest . --typescript --tailwind --eslint --app --src-dir --import-alias \"@/*\" --yes --name wealth-management-portal)",
+      "Read(//private/tmp/**)",
+      "Bash(npx create-next-app@latest wmp --typescript --tailwind --eslint --app --src-dir --import-alias \"@/*\" --yes)",
+      "Bash(cp -r /tmp/wmp/. \"/Users/ash/Documents/Apps/Wealth Management Portal/\")",
+      "Bash(sed -i '' 's/\"name\": \"wmp\"/\"name\": \"wealth-management-portal\"/' \"/Users/ash/Documents/Apps/Wealth Management Portal/package.json\")",
+      "Bash(npm install *)",
+      "Bash(npx tsc *)",
+      "mcp__Claude_Preview__preview_start"
+    ]
+  }
+}

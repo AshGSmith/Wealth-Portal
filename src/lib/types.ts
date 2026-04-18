@@ -52,13 +52,13 @@ export interface Budget {
 }
 
 /**
- * An income stream (e.g. "Acme Corp salary", "Freelance clients").
- * Parent of: Pot, IncomeEntry
+ * An income stream (e.g. "Civica salary", "Freelance clients").
+ * Parent of: IncomeEntry
  */
 export interface IncomeSource {
   id:                   IncomeSourceId;
   type:                 IncomeSourceType;
-  provider:             string;        // human label, e.g. "Acme Corp"
+  provider:             string;        // human label, e.g. "Civica"
   startingAnnualSalary: number | null;
   archived:             boolean;
 }
@@ -87,15 +87,13 @@ export interface IncomeEntry {
 }
 
 /**
- * A named allocation bucket funded by one IncomeSource.
- * Groups related Expenses and Savings under a single income stream.
+ * A named allocation bucket for grouping budget items.
  */
 export interface Pot {
-  id:             PotId;
-  name:           string;
-  incomeSourceId: IncomeSourceId;  // → IncomeSource
-  isBusiness:     boolean;
-  archived:       boolean;
+  id:         PotId;
+  name:       string;
+  isBusiness: boolean;
+  archived:   boolean;
 }
 
 /**
@@ -103,14 +101,15 @@ export interface Pot {
  * startDate/endDate define the active window; both null = open-ended / ongoing.
  */
 interface LineItem {
-  id:        string;
-  name:      string;
-  amount:    number;    // positive, in base currency units
-  potId:     PotId;     // → Pot
-  startDate: ISODate | null;
-  endDate:   ISODate | null;
-  isCritical: boolean;  // flags non-negotiable items (rent, insurance, etc.)
-  archived:  boolean;
+  id:             string;
+  name:           string;
+  amount:         number;          // positive, in base currency units
+  potId:          PotId;           // → Pot
+  incomeSourceId: IncomeSourceId;  // → IncomeSource
+  startDate:      ISODate | null;
+  endDate:        ISODate | null;
+  isCritical:     boolean;         // flags non-negotiable items (rent, insurance, etc.)
+  archived:       boolean;
 }
 
 /**
@@ -133,9 +132,10 @@ export interface Saving extends LineItem {
 // ─── Relationships (summary) ─────────────────────────────────────────────────
 //
 //  IncomeSource  ──< IncomeEntry     (one source, many payment entries)
-//  IncomeSource  ──< Pot             (one source funds many pots)
 //  Pot           ──< Expense         (one pot, many expenses)
 //  Pot           ──< Saving          (one pot, many savings)
+//  IncomeSource  ──< Expense         (one source can fund many expenses)
+//  IncomeSource  ──< Saving          (one source can fund many savings)
 //  Budget        (month overlay)     (a Budget month selects all LineItems
 //                                     whose startDate/endDate window overlaps)
 //
@@ -146,8 +146,6 @@ export interface PotSummary {
   pot:      Pot;
   expenses: Expense[];
   savings:  Saving[];
-  /** Sum of all IncomeEntry.amount for this pot's IncomeSource in the month. */
-  income:   number;
 }
 
 /** Full resolved state for one Budget month. */

@@ -6,7 +6,6 @@ import PageHeader from '@/components/layout/PageHeader';
 import PotForm from '@/components/pots/PotForm';
 import { useStore } from '@/lib/store';
 import type { Pot } from '@/lib/types';
-import { fmtSourceType } from '@/lib/format';
 
 export default function PotsPage() {
   const store = useStore();
@@ -17,16 +16,9 @@ export default function PotsPage() {
 
   const active         = store.pots.filter(p => !p.archived);
   const archived       = store.pots.filter(p =>  p.archived);
-  const activeSources  = store.sources.filter(s => !s.archived);
 
   function openCreate() { setEditing(null); setShowForm(true); }
   function openEdit(pot: Pot) { setEditing(pot); setShowForm(true); }
-
-  const sourceName = (id: string) => store.sources.find(s => s.id === id)?.provider ?? '—';
-  const sourceType = (id: string) => {
-    const s = store.sources.find(src => src.id === id);
-    return s ? fmtSourceType(s.type) : '';
-  };
 
   const actions = (
     <button
@@ -64,11 +56,11 @@ export default function PotsPage() {
               borderColor: 'var(--border)',
               color: 'var(--muted)',
               background: 'var(--surface)',
-              gridTemplateColumns: '1fr 1fr 56px',
+              gridTemplateColumns: '1fr 120px 56px',
             }}
           >
             <span>Name</span>
-            <span>Income source</span>
+            <span>Type</span>
             <span />
           </div>
           <div className="divide-y" style={{ borderColor: 'var(--border)' }}>
@@ -76,8 +68,6 @@ export default function PotsPage() {
               <PotRow
                 key={pot.id}
                 pot={pot}
-                sourceName={sourceName(pot.incomeSourceId)}
-                sourceType={sourceType(pot.incomeSourceId)}
                 onEdit={() => openEdit(pot)}
                 onArchive={() => store.setPotArchived(pot.id, true)}
               />
@@ -107,8 +97,6 @@ export default function PotsPage() {
                   <PotRow
                     key={pot.id}
                     pot={pot}
-                    sourceName={sourceName(pot.incomeSourceId)}
-                    sourceType={sourceType(pot.incomeSourceId)}
                     onEdit={() => openEdit(pot)}
                     onRestore={() => store.setPotArchived(pot.id, false)}
                     isArchived
@@ -121,8 +109,8 @@ export default function PotsPage() {
       )}
 
       <PotForm
+        key={`${editingPot?.id ?? 'new'}-${showForm ? 'open' : 'closed'}`}
         pot={editingPot}
-        sources={activeSources}
         open={showForm}
         onClose={() => setShowForm(false)}
         onSave={pot => store.upsertPot(pot)}
@@ -134,16 +122,14 @@ export default function PotsPage() {
 // ─── Row ─────────────────────────────────────────────────────────────────────
 
 interface RowProps {
-  pot:        Pot;
-  sourceName: string;
-  sourceType: string;
-  onEdit:     () => void;
+  pot: Pot;
+  onEdit: () => void;
   onArchive?: () => void;
   onRestore?: () => void;
   isArchived?: boolean;
 }
 
-function PotRow({ pot, sourceName, sourceType, onEdit, onArchive, onRestore, isArchived }: RowProps) {
+function PotRow({ pot, onEdit, onArchive, onRestore, isArchived }: RowProps) {
   return (
     <div
       className="flex items-center px-4 py-3 gap-3"
@@ -157,13 +143,14 @@ function PotRow({ pot, sourceName, sourceType, onEdit, onArchive, onRestore, isA
           {pot.name}
         </p>
         <p className="text-xs mt-0.5 sm:hidden" style={{ color: 'var(--muted)' }}>
-          {sourceName} · {sourceType}
+          {pot.isBusiness ? 'Business pot' : 'Personal pot'}
         </p>
       </div>
 
       <div className="hidden sm:flex flex-1 items-center gap-1.5 min-w-0">
-        <span className="text-sm truncate" style={{ color: 'var(--muted)' }}>{sourceName}</span>
-        <span className="text-xs" style={{ color: 'var(--muted)' }}>· {sourceType}</span>
+        <span className="text-sm truncate" style={{ color: 'var(--muted)' }}>
+          {pot.isBusiness ? 'Business' : 'Personal'}
+        </span>
       </div>
 
       <div className="flex items-center gap-1 shrink-0">

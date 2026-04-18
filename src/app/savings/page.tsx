@@ -16,6 +16,7 @@ export default function SavingsPage() {
   const [showArchived, setShowArchived] = useState(false);
 
   const activePots = store.pots.filter(p => !p.archived);
+  const activeSources = store.sources.filter(source => !source.archived);
   const active     = store.savings.filter(s => !s.archived);
   const archived   = store.savings.filter(s =>  s.archived);
 
@@ -23,6 +24,7 @@ export default function SavingsPage() {
   function openEdit(saving: Saving) { setEditing(saving); setShowForm(true); }
 
   const potName = (potId: string) => store.pots.find(p => p.id === potId)?.name ?? '—';
+  const sourceName = (sourceId: string) => store.sources.find(source => source.id === sourceId)?.provider ?? '—';
 
   const actions = (
     <button
@@ -76,6 +78,7 @@ export default function SavingsPage() {
                 key={saving.id}
                 saving={saving}
                 potName={potName(saving.potId)}
+                sourceName={sourceName(saving.incomeSourceId)}
                 onEdit={() => openEdit(saving)}
                 onArchive={() => store.setSavingArchived(saving.id, true)}
               />
@@ -106,6 +109,7 @@ export default function SavingsPage() {
                     key={saving.id}
                     saving={saving}
                     potName={potName(saving.potId)}
+                    sourceName={sourceName(saving.incomeSourceId)}
                     onEdit={() => openEdit(saving)}
                     onRestore={() => store.setSavingArchived(saving.id, false)}
                     isArchived
@@ -118,8 +122,10 @@ export default function SavingsPage() {
       )}
 
       <SavingForm
+        key={`${editingSaving?.id ?? 'new'}-${showForm ? 'open' : 'closed'}`}
         saving={editingSaving}
         pots={activePots}
+        sources={activeSources}
         open={showForm}
         onClose={() => setShowForm(false)}
         onSave={saving => store.upsertSaving(saving)}
@@ -133,6 +139,7 @@ export default function SavingsPage() {
 interface RowProps {
   saving:     Saving;
   potName:    string;
+  sourceName: string;
   onEdit:     () => void;
   onArchive?: () => void;
   onRestore?: () => void;
@@ -146,7 +153,7 @@ function dateRange(s: Saving): string {
   return `${start} – ${end}`;
 }
 
-function SavingRow({ saving, potName, onEdit, onArchive, onRestore, isArchived }: RowProps) {
+function SavingRow({ saving, potName, sourceName, onEdit, onArchive, onRestore, isArchived }: RowProps) {
   return (
     <div
       className="flex items-center px-4 py-3 gap-3"
@@ -171,6 +178,8 @@ function SavingRow({ saving, potName, onEdit, onArchive, onRestore, isArchived }
         </div>
         <div className="flex items-center gap-2 mt-0.5 sm:hidden text-xs" style={{ color: 'var(--muted)' }}>
           <span>{potName}</span>
+          <span>·</span>
+          <span>{sourceName}</span>
           <span>·</span>
           <span>{dateRange(saving)}</span>
           <span>·</span>

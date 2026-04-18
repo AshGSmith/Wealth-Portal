@@ -9,9 +9,10 @@ import PotDrawer from '@/components/budget/PotDrawer';
 import NewBudgetModal from '@/components/budget/NewBudgetModal';
 import ReportDownloadButton from '@/components/reports/ReportDownloadButton';
 import Tile from '@/components/ui/Tile';
+import { INCOME_SOURCE_COLOURS } from '@/lib/constants';
 import { downloadReportNodeAsPdf } from '@/components/reports/reportExport';
 import { useStore } from '@/lib/store';
-import { calcBudget, getSourceCalcForPot } from '@/lib/budgetCalc';
+import { calcBudget, getSourceCalcsForPot } from '@/lib/budgetCalc';
 import type { PotId } from '@/lib/types';
 import { fmtCurrency, fmtMonth } from '@/lib/format';
 
@@ -52,8 +53,8 @@ export default function BudgetPage() {
     ? calcBudget(activeBudget, activePots, store.sources, store.entries)
     : null;
 
-  const selectedSourceCalc = calc && selectedPotId ? getSourceCalcForPot(calc, selectedPotId) : null;
   const selectedPotCalc    = calc && selectedPotId ? calc.potCalcs.find(pc => pc.potId === selectedPotId) : null;
+  const selectedSourceCalcs = calc && selectedPotId ? getSourceCalcsForPot(calc, selectedPotId) : [];
 
   // ── Handlers ─────────────────────────────────────────────────────────────
   function handleCreate(month: string) {
@@ -70,6 +71,11 @@ export default function BudgetPage() {
     store.moveBudgetItem(activeMonth, itemId, newPotId as PotId);
   }
 
+  function handleMoveToIncomeSource(itemId: string, incomeSourceId: string) {
+    if (isLocked) return;
+    store.setBudgetItemIncomeSource(activeMonth, itemId, incomeSourceId);
+  }
+
   function handleDelete() {
     store.deleteBudget(activeMonth);
     const remaining = store.budgets.filter(b => b.month !== activeMonth && !b.archived);
@@ -81,6 +87,39 @@ export default function BudgetPage() {
 
   async function handleExportPdf() {
     await downloadReportNodeAsPdf(exportRef.current, `${fmtMonth(activeMonth)} Budget`);
+  }
+
+  function sourceLabelForItems(sourceIds: string[]): string {
+    const labels = sourceIds
+      .map(sourceId => store.sources.find(source => source.id === sourceId)?.provider)
+      .filter((label): label is string => Boolean(label));
+
+    if (labels.length === 0) return 'No linked source';
+    if (labels.length === 1) return labels[0];
+    return `${labels[0]} +${labels.length - 1} more`;
+  }
+
+  function accentColorForItems(sourceIds: string[]): string {
+    if (sourceIds.length !== 1) return '#64748b';
+    const source = store.sources.find(item => item.id === sourceIds[0]);
+    return INCOME_SOURCE_COLOURS[source?.type as keyof typeof INCOME_SOURCE_COLOURS] ?? '#64748b';
+  }
+
+  function sourceBreakdownForItems(items: Array<{ incomeSourceId: string; amount: number }>) {
+    const totals = new Map<string, number>();
+
+    for (const item of items) {
+      totals.set(item.incomeSourceId, (totals.get(item.incomeSourceId) ?? 0) + item.amount);
+    }
+
+    return [...totals.entries()]
+      .map(([sourceId, amount]) => ({
+        label: store.sources.find(source => source.id === sourceId)?.provider ?? 'Unknown',
+        amount: fmtCurrency(amount),
+        rawAmount: amount,
+      }))
+      .sort((a, b) => b.rawAmount - a.rawAmount)
+      .map(({ label, amount }) => ({ label, amount }));
   }
 
   // ── Header actions ───────────────────────────────────────────────────────
@@ -266,18 +305,20 @@ export default function BudgetPage() {
           {/* Pot list */}
           <div className="space-y-2 print:hidden">
             {calc.potCalcs.map(({ pot, items }) => {
-              const source       = store.sources.find(s => s.id === pot.incomeSourceId)!;
-              const sourceCalc   = getSourceCalcForPot(calc, pot.id)!;
+              const sourceCalcs  = getSourceCalcsForPot(calc, pot.id);
+              const sourceIds    = [...new Set(items.map(item => item.incomeSourceId))];
               const expenseItems = items.filter(i => i.sourceType === 'expense');
               const savingItems  = items.filter(i => i.sourceType === 'saving');
               return (
                 <PotCard
                   key={pot.id}
                   pot={pot}
-                  source={source}
                   expenses={expenseItems}
                   savings={savingItems}
-                  isOverAllocated={sourceCalc.isOverAllocated}
+                  sourceLabel={sourceLabelForItems(sourceIds)}
+                  accentColor={accentColorForItems(sourceIds)}
+                  sourceBreakdown={sourceBreakdownForItems(items)}
+                  isOverAllocated={sourceCalcs.some(sourceCalc => sourceCalc.isOverAllocated)}
                   onClick={() => setSelectedPot(pot.id)}
                 />
               );
@@ -285,17 +326,19 @@ export default function BudgetPage() {
           </div>
 
           {/* Pot drilldown drawer */}
-          {selectedPotCalc && selectedSourceCalc && (
+          {selectedPotCalc && (
             <PotDrawer
               pot={selectedPotCalc.pot}
-              source={store.sources.find(s => s.id === selectedPotCalc.pot.incomeSourceId)!}
               items={selectedPotCalc.items}
               allPots={activePots}
-              sourceCalc={selectedSourceCalc}
+              allSources={store.sources}
+              sourceCalcs={selectedSourceCalcs}
+              sourceLabel={sourceLabelForItems([...new Set(selectedPotCalc.items.map(item => item.incomeSourceId))])}
               locked={isLocked}
               open={!!selectedPotId}
               onClose={() => setSelectedPot(null)}
               onMoveToPot={handleMoveToPot}
+              onMoveToIncomeSource={handleMoveToIncomeSource}
             />
           )}
         </>

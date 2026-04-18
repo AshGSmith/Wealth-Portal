@@ -18,7 +18,7 @@ export interface SourceCalc {
   allocated:       number;   // sum of all pot totals linked to this source
   isOverAllocated: boolean;  // allocated > income
   surplus:         number;   // income - allocated (negative when over)
-  pots:            PotCalc[];
+  potIds:          string[];
 }
 
 export interface BudgetCalc {
@@ -81,28 +81,35 @@ export function calcBudget(
       return { potId: pot.id, pot, total: expenses + savings, expenses, savings, items };
     });
 
-  // 3. Group PotCalcs by incomeSourceId
-  const bySource = new Map<string, PotCalc[]>();
-  for (const pc of potCalcs) {
-    const list = bySource.get(pc.pot.incomeSourceId) ?? [];
-    list.push(pc);
-    bySource.set(pc.pot.incomeSourceId, list);
+  // 3. Group item allocations by incomeSourceId
+  const allocatedBySource = new Map<string, number>();
+  const potIdsBySource = new Map<string, Set<string>>();
+  for (const potCalc of potCalcs) {
+    for (const item of potCalc.items) {
+      allocatedBySource.set(
+        item.incomeSourceId,
+        (allocatedBySource.get(item.incomeSourceId) ?? 0) + item.amount,
+      );
+
+      const potIds = potIdsBySource.get(item.incomeSourceId) ?? new Set<string>();
+      potIds.add(potCalc.potId);
+      potIdsBySource.set(item.incomeSourceId, potIds);
+    }
   }
 
   // 4. Build SourceCalc for every active source
   const sourceCalcs: SourceCalc[] = sources
     .filter(s => !s.archived)
     .map(source => {
-      const sourcePots = bySource.get(source.id) ?? [];
       const income     = incomeForSource(entries, source.id, budget.month);
-      const allocated  = sourcePots.reduce((s, pc) => s + pc.total, 0);
+      const allocated  = allocatedBySource.get(source.id) ?? 0;
       return {
         source,
         income,
         allocated,
         isOverAllocated: allocated > income,
         surplus: income - allocated,
-        pots: sourcePots,
+        potIds: [...(potIdsBySource.get(source.id) ?? new Set<string>())],
       };
     });
 
@@ -263,6 +270,6 @@ export function getPotCalc(calc: BudgetCalc, potId: string): PotCalc | undefined
   return calc.potCalcs.find(pc => pc.potId === potId);
 }
 
-export function getSourceCalcForPot(calc: BudgetCalc, potId: string): SourceCalc | undefined {
-  return calc.sourceCalcs.find(sc => sc.pots.some(pc => pc.potId === potId));
+export function getSourceCalcsForPot(calc: BudgetCalc, potId: string): SourceCalc[] {
+  return calc.sourceCalcs.filter(sc => sc.potIds.includes(potId));
 }

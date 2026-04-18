@@ -2,29 +2,38 @@
 
 import { AlertCircle, AlertTriangle, Lock } from 'lucide-react';
 import Sheet from '@/components/ui/Sheet';
+import ReportInsightTable from '@/components/reports/ReportInsightTable';
 import type { Pot, IncomeSource } from '@/lib/types';
 import type { ResolvedLineItem } from '@/lib/budgetLogic';
 import type { SourceCalc } from '@/lib/budgetCalc';
-import { fmtCurrency, fmtSourceType } from '@/lib/format';
+import { fmtCurrency } from '@/lib/format';
 
 interface Props {
-  pot:         Pot;
-  source:      IncomeSource;
-  items:       ResolvedLineItem[];
-  allPots:     Pot[];
-  sourceCalc:  SourceCalc;
-  locked:      boolean;
-  open:        boolean;
-  onClose:     () => void;
+  pot: Pot;
+  items: ResolvedLineItem[];
+  allPots: Pot[];
+  allSources: IncomeSource[];
+  sourceCalcs: SourceCalc[];
+  sourceLabel: string;
+  locked: boolean;
+  open: boolean;
+  onClose: () => void;
   onMoveToPot: (itemId: string, newPotId: string) => void;
+  onMoveToIncomeSource: (itemId: string, incomeSourceId: string) => void;
 }
 
 // ─── Row ─────────────────────────────────────────────────────────────────────
 
-function ItemRow({ item, allPots, locked, onMoveToPot }: {
-  item: ResolvedLineItem; allPots: Pot[]; locked: boolean; onMoveToPot: (id: string, potId: string) => void;
+function ItemRow({ item, allPots, allSources, locked, onMoveToPot, onMoveToIncomeSource }: {
+  item: ResolvedLineItem;
+  allPots: Pot[];
+  allSources: IncomeSource[];
+  locked: boolean;
+  onMoveToPot: (id: string, potId: string) => void;
+  onMoveToIncomeSource: (id: string, incomeSourceId: string) => void;
 }) {
   const isMoved = item.potId !== item.defaultPotId;
+  const isSourceOverridden = item.incomeSourceId !== item.defaultIncomeSourceId;
   return (
     <div className="py-3">
       <div className="flex items-start justify-between gap-3">
@@ -51,16 +60,29 @@ function ItemRow({ item, allPots, locked, onMoveToPot }: {
         </select>
         {isMoved && <span className="shrink-0 text-[10px] font-semibold" style={{ color: 'var(--primary)' }}>moved</span>}
       </div>
+      <div className="flex items-center gap-2 mt-1.5">
+        <span className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
+          style={{ background: 'var(--surface-hover)', color: 'var(--muted)' }}>
+          source
+        </span>
+        <select value={item.incomeSourceId} onChange={e => onMoveToIncomeSource(item.id, e.target.value)}
+          disabled={locked}
+          className="flex-1 min-w-0 rounded border py-0.5 pl-2 pr-1 text-xs outline-none transition-colors"
+          style={{ background: 'transparent', borderColor: isSourceOverridden ? 'var(--primary)' : 'var(--border)', color: 'var(--foreground)', colorScheme: 'dark' as const, opacity: locked ? 0.5 : 1 }}>
+          {allSources.filter(source => !source.archived).map(source => <option key={source.id} value={source.id}>{source.provider}</option>)}
+        </select>
+        {isSourceOverridden && <span className="shrink-0 text-[10px] font-semibold" style={{ color: 'var(--primary)' }}>override</span>}
+      </div>
     </div>
   );
 }
 
 // ─── Drawer ───────────────────────────────────────────────────────────────────
 
-export default function PotDrawer({ pot, source, items, allPots, sourceCalc, locked, open, onClose, onMoveToPot }: Props) {
+export default function PotDrawer({ pot, items, allPots, allSources, sourceCalcs, sourceLabel, locked, open, onClose, onMoveToPot, onMoveToIncomeSource }: Props) {
   const totalRequired = items.reduce((s, i) => s + i.amount, 0);
   const movedCount    = items.filter(i => i.potId !== i.defaultPotId).length;
-  const { income, allocated, isOverAllocated, surplus } = sourceCalc;
+  const hasOverAllocation = sourceCalcs.some(sourceCalc => sourceCalc.isOverAllocated);
 
   const sorted = [...items].sort((a, b) => {
     if (a.sourceType !== b.sourceType) return a.sourceType === 'expense' ? -1 : 1;
@@ -71,7 +93,7 @@ export default function PotDrawer({ pot, source, items, allPots, sourceCalc, loc
     <div>
       <h2 className="text-base font-semibold" style={{ color: 'var(--foreground)' }}>{pot.name}</h2>
       <p className="text-xs mt-0.5" style={{ color: 'var(--muted)' }}>
-        {source.provider} · {fmtSourceType(source.type)}
+        {sourceLabel}
         {' · '}
         <span style={{ color: 'var(--foreground)' }}>{items.length} item{items.length !== 1 ? 's' : ''}</span>
         {movedCount > 0 && <span className="ml-1.5" style={{ color: 'var(--primary)' }}>· {movedCount} moved</span>}
@@ -80,33 +102,39 @@ export default function PotDrawer({ pot, source, items, allPots, sourceCalc, loc
   );
 
   const footer = (
-    <div className="px-5 pt-4 space-y-2">
+    <div className="px-5 pt-4 space-y-3">
       <div className="flex justify-between text-sm">
         <span style={{ color: 'var(--muted)' }}>This pot</span>
         <span style={{ color: 'var(--foreground)' }}>{fmtCurrency(totalRequired)}</span>
       </div>
-      <div className="flex justify-between text-sm">
-        <span style={{ color: 'var(--muted)' }}>
-          {source.provider} total
-          {sourceCalc.pots.length > 1 && <span className="ml-1">({sourceCalc.pots.length} pots)</span>}
-        </span>
-        <span style={{ color: 'var(--foreground)' }}>{fmtCurrency(allocated)}</span>
-      </div>
-      <div className="flex justify-between text-sm">
-        <span style={{ color: 'var(--muted)' }}>{source.provider} income</span>
-        <span style={{ color: 'var(--foreground)' }}>{fmtCurrency(income)}</span>
-      </div>
+      <ReportInsightTable
+        title="Income Source Allocation"
+        columns={[
+          { label: 'Source' },
+          { label: 'Allocated', align: 'right' },
+          { label: 'Income', align: 'right' },
+          { label: 'Balance', align: 'right' },
+        ]}
+        rows={sourceCalcs.map(sourceCalc => ([
+          { content: sourceCalc.source.provider, strong: true, truncate: true },
+          { content: fmtCurrency(sourceCalc.allocated), align: 'right' as const, tone: 'value' as const },
+          { content: fmtCurrency(sourceCalc.income), align: 'right' as const, tone: 'value' as const },
+          {
+            content: `${sourceCalc.surplus >= 0 ? '+' : ''}${fmtCurrency(sourceCalc.surplus)}`,
+            align: 'right' as const,
+            tone: 'value' as const,
+            color: sourceCalc.surplus >= 0 ? '#10b981' : '#f43f5e',
+          },
+        ]))}
+      />
       <div className="flex items-center justify-between text-sm font-semibold pt-2 border-t"
         style={{ borderColor: 'var(--border)' }}>
         <div className="flex items-center gap-1.5">
-          {isOverAllocated && <AlertTriangle size={13} className="text-amber-500" />}
-          <span style={{ color: isOverAllocated ? '#f59e0b' : 'var(--foreground)' }}>
-            {isOverAllocated ? 'Over-allocated' : 'Source balance'}
+          {hasOverAllocation && <AlertTriangle size={13} className="text-amber-500" />}
+          <span style={{ color: hasOverAllocation ? '#f59e0b' : 'var(--foreground)' }}>
+            {hasOverAllocation ? 'Over-allocation detected' : 'All linked sources balanced'}
           </span>
         </div>
-        <span style={{ color: surplus >= 0 ? '#10b981' : '#f43f5e' }}>
-          {surplus >= 0 ? '+' : ''}{fmtCurrency(surplus)}
-        </span>
       </div>
     </div>
   );
@@ -134,7 +162,15 @@ export default function PotDrawer({ pot, source, items, allPots, sourceCalc, loc
             </div>
           )}
           {sorted.map(item => (
-            <ItemRow key={item.id} item={item} allPots={allPots} locked={locked} onMoveToPot={onMoveToPot} />
+            <ItemRow
+              key={item.id}
+              item={item}
+              allPots={allPots}
+              allSources={allSources}
+              locked={locked}
+              onMoveToPot={onMoveToPot}
+              onMoveToIncomeSource={onMoveToIncomeSource}
+            />
           ))}
         </div>
       )}

@@ -8,6 +8,16 @@ import { calcBudgetMetrics, type BudgetCalc } from '@/lib/budgetCalc';
 import { fmtCurrency, fmtMonth } from '@/lib/format';
 import type { IncomeSource } from '@/lib/types';
 
+function sourceLabelForItems(sourceIds: string[], sources: IncomeSource[]): string {
+  const labels = sourceIds
+    .map(sourceId => sources.find(item => item.id === sourceId)?.provider)
+    .filter((label): label is string => Boolean(label));
+
+  if (labels.length === 0) return '—';
+  if (labels.length === 1) return labels[0];
+  return `${labels[0]} +${labels.length - 1} more`;
+}
+
 type BudgetExportDocumentProps = {
   month: string;
   budgetStatus: string;
@@ -67,10 +77,10 @@ const BudgetExportDocument = forwardRef<HTMLDivElement, BudgetExportDocumentProp
             { label: 'Total Required', align: 'right' },
           ]}
           rows={calc.potCalcs.map(({ pot, total }) => {
-            const source = sources.find(item => item.id === pot.incomeSourceId);
+            const sourceIds = [...new Set(calc.sourceCalcs.filter(sourceCalc => sourceCalc.potIds.includes(pot.id)).map(sourceCalc => sourceCalc.source.id))];
             return [
               { content: pot.name, strong: true, truncate: true },
-              { content: source?.provider ?? 'Unknown source', tone: 'muted' as const, truncate: true },
+              { content: sourceLabelForItems(sourceIds, sources), tone: 'muted' as const, truncate: true },
               { content: fmtCurrency(total), align: 'right' as const, tone: 'value' as const },
             ];
           })}
@@ -81,7 +91,7 @@ const BudgetExportDocument = forwardRef<HTMLDivElement, BudgetExportDocumentProp
       <ReportSection title="Pot Detail Breakdown">
         <div className="space-y-2">
           {calc.potCalcs.map(({ pot, total, items }) => {
-            const source = sources.find(item => item.id === pot.incomeSourceId);
+            const sourceIds = [...new Set(items.map(item => item.incomeSourceId))];
 
             return (
               <div
@@ -95,7 +105,7 @@ const BudgetExportDocument = forwardRef<HTMLDivElement, BudgetExportDocumentProp
                       {pot.name}
                     </p>
                     <p className="mt-0.5 text-xs" style={{ color: 'var(--muted)' }}>
-                      {source?.provider ?? 'Unknown source'}
+                      {sourceLabelForItems(sourceIds, sources)}
                     </p>
                   </div>
                   <p className="shrink-0 text-sm font-semibold tabular-nums text-right" style={{ color: 'var(--foreground)' }}>

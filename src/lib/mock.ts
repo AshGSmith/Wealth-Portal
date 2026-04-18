@@ -27,7 +27,7 @@ export const MOCK_BUDGET: Budget = {
 // ─── Income sources ───────────────────────────────────────────────────────────
 
 export const MOCK_INCOME_SOURCES: IncomeSource[] = [
-  { id: id<IncomeSourceId>('is1'), type: 'salary',    provider: 'Acme Corp',     startingAnnualSalary: 48000, archived: false },
+  { id: id<IncomeSourceId>('is1'), type: 'salary',    provider: 'Civica',        startingAnnualSalary: 48000, archived: false },
   { id: id<IncomeSourceId>('is2'), type: 'business', provider: 'Design Studio', startingAnnualSalary: null,  archived: false },
 ];
 
@@ -65,39 +65,39 @@ export const MOCK_INCOME_ENTRIES: IncomeEntry[] = [
 // ─── Pots ─────────────────────────────────────────────────────────────────────
 
 export const MOCK_POTS: Pot[] = [
-  { id: id<PotId>('p1'), name: 'Household',       incomeSourceId: id<IncomeSourceId>('is1'), isBusiness: false, archived: false },
-  { id: id<PotId>('p2'), name: 'Personal',         incomeSourceId: id<IncomeSourceId>('is1'), isBusiness: false, archived: false },
-  { id: id<PotId>('p3'), name: 'Goals & Savings',  incomeSourceId: id<IncomeSourceId>('is1'), isBusiness: false, archived: false },
-  { id: id<PotId>('p4'), name: 'Freelance',        incomeSourceId: id<IncomeSourceId>('is2'), isBusiness: true,  archived: false },
+  { id: id<PotId>('p1'), name: 'Household',      isBusiness: false, archived: false },
+  { id: id<PotId>('p2'), name: 'Personal',       isBusiness: false, archived: false },
+  { id: id<PotId>('p3'), name: 'Goals & Savings', isBusiness: false, archived: false },
+  { id: id<PotId>('p4'), name: 'Freelance',      isBusiness: true,  archived: false },
 ];
 
 // ─── Expenses ─────────────────────────────────────────────────────────────────
 
 export const MOCK_EXPENSES: Expense[] = [
   // Household (p1)
-  { id: id<ExpenseId>('e1'), potId: id<PotId>('p1'), name: 'Rent',            amount: 1200, isCritical: true,  startDate: null, endDate: null, archived: false, oneOffPayment: false, oneOffAppliedBudgetMonth: null },
-  { id: id<ExpenseId>('e2'), potId: id<PotId>('p1'), name: 'Electricity & Gas', amount: 95, isCritical: true,  startDate: null, endDate: null, archived: false, oneOffPayment: false, oneOffAppliedBudgetMonth: null },
-  { id: id<ExpenseId>('e3'), potId: id<PotId>('p1'), name: 'Groceries',       amount: 380, isCritical: false, startDate: null, endDate: null, archived: false, oneOffPayment: false, oneOffAppliedBudgetMonth: null },
-  { id: id<ExpenseId>('e4'), potId: id<PotId>('p1'), name: 'Broadband',        amount: 30, isCritical: true,  startDate: null, endDate: null, archived: false, oneOffPayment: false, oneOffAppliedBudgetMonth: null },
+  { id: id<ExpenseId>('e1'), potId: id<PotId>('p1'), incomeSourceId: id<IncomeSourceId>('is1'), name: 'Rent',             amount: 1200, isCritical: true,  startDate: null, endDate: null, archived: false, oneOffPayment: false, oneOffAppliedBudgetMonth: null },
+  { id: id<ExpenseId>('e2'), potId: id<PotId>('p1'), incomeSourceId: id<IncomeSourceId>('is1'), name: 'Electricity & Gas', amount: 95,  isCritical: true,  startDate: null, endDate: null, archived: false, oneOffPayment: false, oneOffAppliedBudgetMonth: null },
+  { id: id<ExpenseId>('e3'), potId: id<PotId>('p1'), incomeSourceId: id<IncomeSourceId>('is1'), name: 'Groceries',        amount: 380, isCritical: false, startDate: null, endDate: null, archived: false, oneOffPayment: false, oneOffAppliedBudgetMonth: null },
+  { id: id<ExpenseId>('e4'), potId: id<PotId>('p1'), incomeSourceId: id<IncomeSourceId>('is1'), name: 'Broadband',        amount: 30,  isCritical: true,  startDate: null, endDate: null, archived: false, oneOffPayment: false, oneOffAppliedBudgetMonth: null },
   // Personal (p2)
-  { id: id<ExpenseId>('e5'), potId: id<PotId>('p2'), name: 'Transport',       amount: 165, isCritical: false, startDate: null, endDate: null, archived: false, oneOffPayment: false, oneOffAppliedBudgetMonth: null },
-  { id: id<ExpenseId>('e6'), potId: id<PotId>('p2'), name: 'Gym membership',   amount: 45, isCritical: false, startDate: null, endDate: null, archived: false, oneOffPayment: false, oneOffAppliedBudgetMonth: null },
-  { id: id<ExpenseId>('e7'), potId: id<PotId>('p2'), name: 'Clothing',         amount: 60, isCritical: false, startDate: null, endDate: null, archived: false, oneOffPayment: false, oneOffAppliedBudgetMonth: null },
-  { id: id<ExpenseId>('e8'), potId: id<PotId>('p2'), name: 'Eating out',      amount: 120, isCritical: false, startDate: null, endDate: null, archived: false, oneOffPayment: false, oneOffAppliedBudgetMonth: null },
+  { id: id<ExpenseId>('e5'), potId: id<PotId>('p2'), incomeSourceId: id<IncomeSourceId>('is1'), name: 'Transport',       amount: 165, isCritical: false, startDate: null, endDate: null, archived: false, oneOffPayment: false, oneOffAppliedBudgetMonth: null },
+  { id: id<ExpenseId>('e6'), potId: id<PotId>('p2'), incomeSourceId: id<IncomeSourceId>('is1'), name: 'Gym membership',   amount: 45,  isCritical: false, startDate: null, endDate: null, archived: false, oneOffPayment: false, oneOffAppliedBudgetMonth: null },
+  { id: id<ExpenseId>('e7'), potId: id<PotId>('p2'), incomeSourceId: id<IncomeSourceId>('is1'), name: 'Clothing',        amount: 60,  isCritical: false, startDate: null, endDate: null, archived: false, oneOffPayment: false, oneOffAppliedBudgetMonth: null },
+  { id: id<ExpenseId>('e8'), potId: id<PotId>('p2'), incomeSourceId: id<IncomeSourceId>('is1'), name: 'Eating out',      amount: 120, isCritical: false, startDate: null, endDate: null, archived: false, oneOffPayment: false, oneOffAppliedBudgetMonth: null },
   // Freelance (p4)
-  { id: id<ExpenseId>('e9'),  potId: id<PotId>('p4'), name: 'Adobe CC',        amount: 55, isCritical: true,  startDate: null, endDate: null, archived: false, oneOffPayment: false, oneOffAppliedBudgetMonth: null },
-  { id: id<ExpenseId>('e10'), potId: id<PotId>('p4'), name: 'Cloud hosting',   amount: 28, isCritical: false, startDate: null, endDate: null, archived: false, oneOffPayment: false, oneOffAppliedBudgetMonth: null },
+  { id: id<ExpenseId>('e9'),  potId: id<PotId>('p4'), incomeSourceId: id<IncomeSourceId>('is2'), name: 'Adobe CC',      amount: 55, isCritical: true,  startDate: null, endDate: null, archived: false, oneOffPayment: false, oneOffAppliedBudgetMonth: null },
+  { id: id<ExpenseId>('e10'), potId: id<PotId>('p4'), incomeSourceId: id<IncomeSourceId>('is2'), name: 'Cloud hosting', amount: 28, isCritical: false, startDate: null, endDate: null, archived: false, oneOffPayment: false, oneOffAppliedBudgetMonth: null },
 ];
 
 // ─── Savings ──────────────────────────────────────────────────────────────────
 
 export const MOCK_SAVINGS: Saving[] = [
   // Goals (p3)
-  { id: id<SavingId>('s1'), potId: id<PotId>('p3'), name: 'Emergency fund',  amount: 300, isCritical: true,  startDate: null, endDate: null, archived: false },
-  { id: id<SavingId>('s2'), potId: id<PotId>('p3'), name: 'Holiday',         amount: 150, isCritical: false, startDate: null, endDate: null, archived: false },
-  { id: id<SavingId>('s3'), potId: id<PotId>('p3'), name: 'House deposit',   amount: 400, isCritical: true,  startDate: null, endDate: null, archived: false },
+  { id: id<SavingId>('s1'), potId: id<PotId>('p3'), incomeSourceId: id<IncomeSourceId>('is1'), name: 'Emergency fund', amount: 300, isCritical: true,  startDate: null, endDate: null, archived: false },
+  { id: id<SavingId>('s2'), potId: id<PotId>('p3'), incomeSourceId: id<IncomeSourceId>('is1'), name: 'Holiday',        amount: 150, isCritical: false, startDate: null, endDate: null, archived: false },
+  { id: id<SavingId>('s3'), potId: id<PotId>('p3'), incomeSourceId: id<IncomeSourceId>('is1'), name: 'House deposit',  amount: 400, isCritical: true,  startDate: null, endDate: null, archived: false },
   // Freelance (p4)
-  { id: id<SavingId>('s4'), potId: id<PotId>('p4'), name: 'Tax reserve',     amount: 220, isCritical: true,  startDate: null, endDate: null, archived: false },
+  { id: id<SavingId>('s4'), potId: id<PotId>('p4'), incomeSourceId: id<IncomeSourceId>('is2'), name: 'Tax reserve', amount: 220, isCritical: true,  startDate: null, endDate: null, archived: false },
 ];
 
 export const MOCK_BUDGETS: LocalBudget[] = [{

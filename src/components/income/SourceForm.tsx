@@ -88,7 +88,7 @@ export default function SourceForm({ source, open, onClose, onSave }: Props) {
             Provider <span className="text-rose-500">*</span>
           </label>
           <input type="text" value={form.provider} onChange={e => set('provider', e.target.value)}
-            placeholder="e.g. Acme Corp" className={inputCls}
+            placeholder="e.g. Civica" className={inputCls}
             style={{ ...inputStyle, borderColor: errors.provider ? '#f43f5e' : 'var(--border)' }} />
           {errors.provider && <p className="mt-1 text-xs text-rose-500">{errors.provider}</p>}
         </div>

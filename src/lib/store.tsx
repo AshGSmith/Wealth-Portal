@@ -34,6 +34,7 @@ import type {
   Debt, DebtHistory, DebtTransaction,
   Pension, PensionHistory,
   PotId,
+  IncomeSourceId,
 } from '@/lib/types';
 
 // ─── localStorage helpers ─────────────────────────────────────────────────────
@@ -70,6 +71,7 @@ interface AppStore {
   upsertBudget:         (b: LocalBudget) => void;
   createBudgetForMonth: (month: string) => void;
   moveBudgetItem:       (month: string, itemId: string, newPotId: PotId) => void;
+  setBudgetItemIncomeSource: (month: string, itemId: string, incomeSourceId: string) => void;
   setActiveBudgetMonth: (month: string) => void;
   deleteBudget:         (month: string) => void;
   setBudgetArchived:    (month: string, archived: boolean) => void;
@@ -152,6 +154,19 @@ function normalizeIncomeSources(sources: IncomeSource[]): IncomeSource[] {
   return sources.map(normalizeIncomeSource);
 }
 
+function normalizePot(pot: Pot): Pot {
+  return {
+    id: pot.id,
+    name: pot.name,
+    isBusiness: pot.isBusiness ?? false,
+    archived: pot.archived,
+  };
+}
+
+function normalizePots(pots: Pot[]): Pot[] {
+  return pots.map(normalizePot);
+}
+
 function normalizeSalaryHistoryEntry(entry: SalaryHistory): SalaryHistory {
   return {
     ...entry,
@@ -163,6 +178,82 @@ function normalizeSalaryHistory(entries: SalaryHistory[]): SalaryHistory[] {
   return entries.map(normalizeSalaryHistoryEntry);
 }
 
+function normalizeProviderName(value: string): string {
+  return value.trim().toLowerCase();
+}
+
+function isNamedIncomeSource(source: IncomeSource, providerName: string): boolean {
+  return normalizeProviderName(source.provider) === normalizeProviderName(providerName);
+}
+
+function migrateIncomeSourceProvider(
+  sources: IncomeSource[],
+  entries: IncomeEntry[],
+  salaryHistory: SalaryHistory[],
+  expenses: Expense[],
+  savings: Saving[],
+  budgets: LocalBudget[],
+): {
+  sources: IncomeSource[];
+  entries: IncomeEntry[];
+  salaryHistory: SalaryHistory[];
+  expenses: Expense[];
+  savings: Saving[];
+  budgets: LocalBudget[];
+} {
+  const acmeSources = sources.filter(source => isNamedIncomeSource(source, 'ACME Corp'));
+  if (acmeSources.length === 0) {
+    return { sources, entries, salaryHistory, expenses, savings, budgets };
+  }
+
+  const existingCivicaSource = sources.find(source => isNamedIncomeSource(source, 'Civica')) ?? null;
+  const targetSource = existingCivicaSource ?? acmeSources[0];
+  const sourceIdsToReplace = new Set(
+    acmeSources
+      .map(source => source.id)
+      .filter(sourceId => sourceId !== targetSource.id),
+  );
+
+  const remapIncomeSourceId = (incomeSourceId: IncomeSourceId): IncomeSourceId =>
+    sourceIdsToReplace.has(incomeSourceId)
+      ? targetSource.id
+      : incomeSourceId;
+
+  return {
+    sources: sources
+      .filter(source => !sourceIdsToReplace.has(source.id))
+      .map(source => (
+        source.id === targetSource.id
+          ? { ...source, provider: 'Civica' }
+          : source
+      )),
+    entries: entries.map(entry => ({
+      ...entry,
+      incomeSourceId: remapIncomeSourceId(entry.incomeSourceId),
+    })),
+    salaryHistory: salaryHistory.map(entry => ({
+      ...entry,
+      incomeSourceId: remapIncomeSourceId(entry.incomeSourceId),
+    })),
+    expenses: expenses.map(expense => ({
+      ...expense,
+      incomeSourceId: remapIncomeSourceId(expense.incomeSourceId),
+    })),
+    savings: savings.map(saving => ({
+      ...saving,
+      incomeSourceId: remapIncomeSourceId(saving.incomeSourceId),
+    })),
+    budgets: budgets.map(budget => ({
+      ...budget,
+      items: budget.items.map(item => ({
+        ...item,
+        incomeSourceId: remapIncomeSourceId(item.incomeSourceId),
+        defaultIncomeSourceId: remapIncomeSourceId(item.defaultIncomeSourceId),
+      })),
+    })),
+  };
+}
+
 function normalizeExpense(expense: Expense): Expense {
   return {
     ...expense,
@@ -171,8 +262,26 @@ function normalizeExpense(expense: Expense): Expense {
   };
 }
 
-function normalizeExpenses(expenses: Expense[]): Expense[] {
-  return expenses.map(normalizeExpense);
+function normalizeExpenseWithSource(
+  expense: Expense & { incomeSourceId?: string | null },
+  pots: Array<Pot & { incomeSourceId?: string }>,
+): Expense {
+  const linkedPot = pots.find(pot => pot.id === expense.potId);
+  return {
+    ...normalizeExpense(expense),
+    incomeSourceId: (expense.incomeSourceId ?? linkedPot?.incomeSourceId ?? '') as Expense['incomeSourceId'],
+  };
+}
+
+function normalizeSavingWithSource(
+  saving: Saving & { incomeSourceId?: string | null },
+  pots: Array<Pot & { incomeSourceId?: string }>,
+): Saving {
+  const linkedPot = pots.find(pot => pot.id === saving.potId);
+  return {
+    ...saving,
+    incomeSourceId: (saving.incomeSourceId ?? linkedPot?.incomeSourceId ?? '') as Saving['incomeSourceId'],
+  };
 }
 
 function normalizeBudgets(budgets: LocalBudget[], expenses: Expense[]): LocalBudget[] {
@@ -275,16 +384,32 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // Runs once on the client after hydration — safe to access localStorage here.
   useEffect(() => {
     const loadedBudgets = load('wmp:budgets', MOCK_BUDGETS);
-    const loadedExpenses = normalizeExpenses(load('wmp:expenses', MOCK_EXPENSES));
+    const loadedSources = normalizeIncomeSources(load('wmp:sources', MOCK_INCOME_SOURCES));
+    const loadedEntries = load('wmp:entries', MOCK_INCOME_ENTRIES);
+    const loadedSalaryHistory = normalizeSalaryHistory(load('wmp:salaryHistory', MOCK_SALARY_HISTORY));
+    const loadedPots = load('wmp:pots', MOCK_POTS) as Array<Pot & { incomeSourceId?: string }>;
+    const loadedExpenses = load('wmp:expenses', MOCK_EXPENSES) as Array<Expense & { incomeSourceId?: string | null }>;
+    const loadedSavings = load('wmp:savings', MOCK_SAVINGS) as Array<Saving & { incomeSourceId?: string | null }>;
+    const normalizedPots = normalizePots(loadedPots);
+    const normalizedExpenses = loadedExpenses.map(expense => normalizeExpenseWithSource(expense, loadedPots));
+    const normalizedSavings = loadedSavings.map(saving => normalizeSavingWithSource(saving, loadedPots));
+    const migratedIncomeData = migrateIncomeSourceProvider(
+      loadedSources,
+      loadedEntries,
+      loadedSalaryHistory,
+      normalizedExpenses,
+      normalizedSavings,
+      loadedBudgets,
+    );
 
-    setBudgets          (normalizeBudgets(loadedBudgets, loadedExpenses));
+    setBudgets          (normalizeBudgets(migratedIncomeData.budgets, migratedIncomeData.expenses));
     setActiveBudgetMonth(load('wmp:activeBudgetMonth', '2026-04'));
-    setSources          (normalizeIncomeSources(load('wmp:sources', MOCK_INCOME_SOURCES)));
-    setEntries          (load('wmp:entries',           MOCK_INCOME_ENTRIES));
-    setSalaryHistory    (normalizeSalaryHistory(load('wmp:salaryHistory', MOCK_SALARY_HISTORY)));
-    setPots             (load('wmp:pots',              MOCK_POTS));
-    setExpenses         (loadedExpenses);
-    setSavings          (load('wmp:savings',           MOCK_SAVINGS));
+    setSources          (migratedIncomeData.sources);
+    setEntries          (migratedIncomeData.entries);
+    setSalaryHistory    (migratedIncomeData.salaryHistory);
+    setPots             (normalizedPots);
+    setExpenses         (migratedIncomeData.expenses);
+    setSavings          (migratedIncomeData.savings);
     setMortgages        (load('wmp:mortgages',         MOCK_MORTGAGES));
     setMortgagePayments (load('wmp:mortgagePayments',  MOCK_MORTGAGE_PAYMENTS));
     setProperties       (load('wmp:properties',        MOCK_PROPERTIES));
@@ -350,6 +475,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
         items: b.items.map(i => i.id === itemId ? { ...i, potId: newPotId } : i),
       })
     ),
+    setBudgetItemIncomeSource: (month, itemId, incomeSourceId) => setBudgets(prev =>
+      prev.map(b => b.month !== month ? b : {
+        ...b,
+        items: b.items.map(i => i.id === itemId ? { ...i, incomeSourceId: incomeSourceId as typeof i.incomeSourceId } : i),
+      })
+    ),
     setActiveBudgetMonth: month => setActiveBudgetMonth(month),
     deleteBudget:      month => setBudgets(prev => prev.filter(b => b.month !== month)),
     setBudgetArchived: (month, v) => setBudgets(prev => prev.map(b => b.month !== month ? b : { ...b, archived: v })),
@@ -359,7 +490,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     upsertEntry:   e  => setEntries(prev  => upsert(prev, e)),
     upsertSalaryHistory: h => setSalaryHistory(prev => upsert(prev, normalizeSalaryHistoryEntry(h))),
     removeSalaryHistory: id => setSalaryHistory(prev => prev.filter(entry => entry.id !== id)),
-    upsertPot:     p  => setPots(prev     => upsert(prev, p)),
+    upsertPot:     p  => setPots(prev     => upsert(prev, normalizePot(p))),
     upsertExpense: e  => {
       const existing = expenses.find(expense => expense.id === e.id) ?? null;
       const openCurrentBudget = budgets.find(b =>

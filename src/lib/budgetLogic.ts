@@ -1,4 +1,4 @@
-import type { Expense, Saving, PotId } from './types';
+import type { Expense, Saving, PotId, IncomeSourceId } from './types';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -6,6 +6,8 @@ export interface ResolvedLineItem {
   id:           string;         // "expense-e1" | "saving-s1"
   sourceType:   'expense' | 'saving';
   sourceId:     string;
+  incomeSourceId: IncomeSourceId;
+  defaultIncomeSourceId: IncomeSourceId;
   name:         string;
   amount:       number;
   potId:        PotId;          // current assignment — may be overridden
@@ -48,6 +50,8 @@ function toResolvedExpenseItem(e: Expense): ResolvedLineItem {
     id:           `expense-${e.id}`,
     sourceType:   'expense',
     sourceId:     e.id,
+    incomeSourceId: e.incomeSourceId,
+    defaultIncomeSourceId: e.incomeSourceId,
     name:         e.name,
     amount:       e.amount,
     potId:        e.potId,
@@ -104,6 +108,8 @@ export function resolveItemsForMonth(
         id:           `saving-${s.id}`,
         sourceType:   'saving',
         sourceId:     s.id,
+        incomeSourceId: s.incomeSourceId,
+        defaultIncomeSourceId: s.incomeSourceId,
         name:         s.name,
         amount:       s.amount,
         potId:        s.potId,
@@ -150,7 +156,11 @@ export function sanitizeBudgetForOneOffExpenses(
         const resolved = resolveExpenseForMonth(expense, budget.month);
         if (!resolved) continue;
 
-        items.push({ ...resolved, potId: item.potId });
+        items.push({
+          ...resolved,
+          potId: item.potId,
+          incomeSourceId: item.incomeSourceId,
+        });
         seenItemIds.add(item.id);
         continue;
       }

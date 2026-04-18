@@ -16,6 +16,7 @@ export default function ExpensesPage() {
   const [showArchived, setShowArchived] = useState(false);
 
   const activePots = store.pots.filter(p => !p.archived);
+  const activeSources = store.sources.filter(source => !source.archived);
   const active     = store.expenses.filter(e => !e.archived);
   const archived   = store.expenses.filter(e =>  e.archived);
 
@@ -23,6 +24,7 @@ export default function ExpensesPage() {
   function openEdit(expense: Expense) { setEditing(expense); setShowForm(true); }
 
   const potName = (potId: string) => store.pots.find(p => p.id === potId)?.name ?? '—';
+  const sourceName = (sourceId: string) => store.sources.find(source => source.id === sourceId)?.provider ?? '—';
 
   const actions = (
     <button
@@ -76,6 +78,7 @@ export default function ExpensesPage() {
                 key={expense.id}
                 expense={expense}
                 potName={potName(expense.potId)}
+                sourceName={sourceName(expense.incomeSourceId)}
                 onEdit={() => openEdit(expense)}
                 onArchive={() => store.setExpenseArchived(expense.id, true)}
               />
@@ -106,6 +109,7 @@ export default function ExpensesPage() {
                     key={expense.id}
                     expense={expense}
                     potName={potName(expense.potId)}
+                    sourceName={sourceName(expense.incomeSourceId)}
                     onEdit={() => openEdit(expense)}
                     onRestore={() => store.setExpenseArchived(expense.id, false)}
                     isArchived
@@ -118,8 +122,10 @@ export default function ExpensesPage() {
       )}
 
       <ExpenseForm
+        key={`${editingExpense?.id ?? 'new'}-${showForm ? 'open' : 'closed'}`}
         expense={editingExpense}
         pots={activePots}
+        sources={activeSources}
         open={showForm}
         onClose={() => setShowForm(false)}
         onSave={expense => store.upsertExpense(expense)}
@@ -133,6 +139,7 @@ export default function ExpensesPage() {
 interface RowProps {
   expense:    Expense;
   potName:    string;
+  sourceName: string;
   onEdit:     () => void;
   onArchive?: () => void;
   onRestore?: () => void;
@@ -146,7 +153,7 @@ function dateRange(e: Expense): string {
   return `${s} – ${end}`;
 }
 
-function ExpenseRow({ expense, potName, onEdit, onArchive, onRestore, isArchived }: RowProps) {
+function ExpenseRow({ expense, potName, sourceName, onEdit, onArchive, onRestore, isArchived }: RowProps) {
   return (
     <div
       className="flex items-center px-4 py-3 gap-3"
@@ -179,6 +186,8 @@ function ExpenseRow({ expense, potName, onEdit, onArchive, onRestore, isArchived
         </div>
         <div className="flex items-center gap-2 mt-0.5 sm:hidden text-xs" style={{ color: 'var(--muted)' }}>
           <span>{potName}</span>
+          <span>·</span>
+          <span>{sourceName}</span>
           <span>·</span>
           <span>{dateRange(expense)}</span>
           <span>·</span>

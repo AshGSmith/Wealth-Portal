@@ -1,35 +1,47 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import Sheet from '@/components/ui/Sheet';
-import type { Expense, Pot, ExpenseId, PotId } from '@/lib/types';
+import type { Expense, Pot, ExpenseId, PotId, IncomeSource, IncomeSourceId } from '@/lib/types';
 
 interface Props {
   expense: Expense | null;
-  pots:    Pot[];
-  open:    boolean;
+  pots: Pot[];
+  sources: IncomeSource[];
+  open: boolean;
   onClose: () => void;
-  onSave:  (expense: Expense) => void;
+  onSave: (expense: Expense) => void;
 }
 
 interface FormState {
   name:       string;
   amount:     string;
   potId:      string;
+  incomeSourceId: string;
   startDate:  string;
   endDate:    string;
   isCritical: boolean;
   oneOffPayment: boolean;
 }
 
-function blank(pots: Pot[]): FormState {
-  return { name: '', amount: '', potId: pots.find(p => !p.archived)?.id ?? '', startDate: '', endDate: '', isCritical: false, oneOffPayment: false };
+function blank(pots: Pot[], sources: IncomeSource[]): FormState {
+  return {
+    name: '',
+    amount: '',
+    potId: pots.find(p => !p.archived)?.id ?? '',
+    incomeSourceId: sources.find(source => !source.archived)?.id ?? '',
+    startDate: '',
+    endDate: '',
+    isCritical: false,
+    oneOffPayment: false,
+  };
 }
 function fromExpense(e: Expense): FormState {
   return {
     name: e.name,
     amount: String(e.amount),
     potId: e.potId,
+    incomeSourceId: e.incomeSourceId,
     startDate: e.startDate ?? '',
     endDate: e.endDate ?? '',
     isCritical: e.isCritical,
@@ -40,13 +52,9 @@ function fromExpense(e: Expense): FormState {
 const inputCls = 'w-full rounded-lg border px-3 py-2.5 text-sm outline-none transition-colors';
 const inputStyle = { background: 'var(--surface-hover)', borderColor: 'var(--border)', color: 'var(--foreground)', colorScheme: 'dark' as const };
 
-export default function ExpenseForm({ expense, pots, open, onClose, onSave }: Props) {
-  const [form, setForm]     = useState<FormState>(() => expense ? fromExpense(expense) : blank(pots));
+export default function ExpenseForm({ expense, pots, sources, open, onClose, onSave }: Props) {
+  const [form, setForm]     = useState<FormState>(() => expense ? fromExpense(expense) : blank(pots, sources));
   const [errors, setErrors] = useState<Partial<Record<keyof FormState, string>>>({});
-
-  useEffect(() => {
-    if (open) { setForm(expense ? fromExpense(expense) : blank(pots)); setErrors({}); }
-  }, [open, expense, pots]);
 
   function set<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm(prev => ({ ...prev, [key]: value }));
@@ -59,6 +67,7 @@ export default function ExpenseForm({ expense, pots, open, onClose, onSave }: Pr
     if (!form.amount.trim())          errs.amount = 'Required';
     else if (Number(form.amount) <= 0) errs.amount = 'Must be > 0';
     if (!form.potId)                  errs.potId  = 'Required';
+    if (!form.incomeSourceId)         errs.incomeSourceId = 'Required';
     if (form.startDate && form.endDate && form.endDate < form.startDate) errs.endDate = 'Must be after start date';
     setErrors(errs);
     return Object.keys(errs).length === 0;
@@ -71,6 +80,7 @@ export default function ExpenseForm({ expense, pots, open, onClose, onSave }: Pr
       name:       form.name.trim(),
       amount:     parseFloat(form.amount),
       potId:      form.potId as PotId,
+      incomeSourceId: form.incomeSourceId as IncomeSourceId,
       startDate:  form.startDate || null,
       endDate:    form.endDate   || null,
       isCritical: form.isCritical,
@@ -82,6 +92,7 @@ export default function ExpenseForm({ expense, pots, open, onClose, onSave }: Pr
   }
 
   const activePots = pots.filter(p => !p.archived);
+  const activeSources = sources.filter(source => !source.archived);
   const isEditing  = !!expense;
 
   const title = (
@@ -142,6 +153,18 @@ export default function ExpenseForm({ expense, pots, open, onClose, onSave }: Pr
             {activePots.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
           </select>
           {errors.potId && <p className="mt-1 text-xs text-rose-500">{errors.potId}</p>}
+        </div>
+
+        <div>
+          <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--muted)' }}>
+            Income Source <span className="text-rose-500">*</span>
+          </label>
+          <select value={form.incomeSourceId} onChange={e => set('incomeSourceId', e.target.value)} className={inputCls}
+            style={{ ...inputStyle, borderColor: errors.incomeSourceId ? '#f43f5e' : 'var(--border)' }}>
+            <option value="" disabled>Select a source…</option>
+            {activeSources.map(source => <option key={source.id} value={source.id}>{source.provider}</option>)}
+          </select>
+          {errors.incomeSourceId && <p className="mt-1 text-xs text-rose-500">{errors.incomeSourceId}</p>}
         </div>
 
         {/* Date range */}

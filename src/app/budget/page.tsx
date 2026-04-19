@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { ChevronLeft, ChevronRight, Plus, Lock, LockOpen, Archive, ArchiveRestore, Trash2, ChevronDown } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, Lock, LockOpen, Archive, ArchiveRestore, Trash2, ChevronDown, RefreshCw } from 'lucide-react';
 import BudgetExportDocument from '@/components/budget/BudgetExportDocument';
 import PageHeader from '@/components/layout/PageHeader';
 import PotCard from '@/components/budget/PotCard';
@@ -74,6 +74,11 @@ export default function BudgetPage() {
   function handleMoveToIncomeSource(itemId: string, incomeSourceId: string) {
     if (isLocked) return;
     store.setBudgetItemIncomeSource(activeMonth, itemId, incomeSourceId);
+  }
+
+  function handleRefresh() {
+    if (isLocked || !activeBudget) return;
+    store.refreshBudgetForMonth(activeMonth);
   }
 
   function handleDelete() {
@@ -205,6 +210,18 @@ export default function BudgetPage() {
             >
               {activeBudget.archived ? <ArchiveRestore size={12} /> : <Archive size={12} />}
               {activeBudget.archived ? 'Unarchive' : 'Archive'}
+            </button>
+            <button
+              onClick={handleRefresh}
+              disabled={isLocked}
+              className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40"
+              style={{ color: 'var(--muted)' }}
+              onMouseEnter={e => { if (!e.currentTarget.disabled) e.currentTarget.style.background = 'var(--surface-hover)'; }}
+              onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
+              title={isLocked ? 'Unlock this budget to refresh it' : 'Refresh budget values'}
+            >
+              <RefreshCw size={12} />
+              Refresh
             </button>
             <ReportDownloadButton onClick={handleExportPdf} className="border-transparent px-2.5 py-1.5 text-xs font-medium" />
             <button

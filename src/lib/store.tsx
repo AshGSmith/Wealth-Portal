@@ -23,6 +23,7 @@ import {
 import {
   applyPendingOneOffExpensesToBudgetMonth,
   createBudget,
+  refreshBudget,
   resolveExpenseForMonth,
   sanitizeBudgetForOneOffExpenses,
   type LocalBudget,
@@ -40,6 +41,30 @@ import type { AccessibleUser } from '@/lib/auth/types';
 
 // ─── localStorage helpers ─────────────────────────────────────────────────────
 
+const STORAGE_VERSION = '0.1.2';
+const STORAGE_VERSION_KEY = 'wmp:storageVersion';
+const STORAGE_BACKUP_PREFIX = 'wmp:backup:';
+const STORAGE_KEYS = [
+  'wmp:budgets',
+  'wmp:activeBudgetMonth',
+  'wmp:sources',
+  'wmp:entries',
+  'wmp:salaryHistory',
+  'wmp:pots',
+  'wmp:expenses',
+  'wmp:savings',
+  'wmp:mortgages',
+  'wmp:mortgagePayments',
+  'wmp:properties',
+  'wmp:savingsAccounts',
+  'wmp:savingsHistory',
+  'wmp:debts',
+  'wmp:debtTransactions',
+  'wmp:debtHistory',
+  'wmp:pensions',
+  'wmp:pensionHistory',
+] as const;
+
 function load<T>(key: string, fallback: T): T {
   if (typeof window === 'undefined') return fallback;
   try {
@@ -52,6 +77,37 @@ function load<T>(key: string, fallback: T): T {
 
 function save<T>(key: string, value: T): void {
   try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* quota exceeded or SSR */ }
+}
+
+function ensureStorageUpgradeBackup(): void {
+  if (typeof window === 'undefined') return;
+
+  try {
+    const previousVersion = localStorage.getItem(STORAGE_VERSION_KEY);
+    if (!previousVersion || previousVersion === STORAGE_VERSION) {
+      localStorage.setItem(STORAGE_VERSION_KEY, STORAGE_VERSION);
+      return;
+    }
+
+    const backupKey = `${STORAGE_BACKUP_PREFIX}${previousVersion}`;
+    if (!localStorage.getItem(backupKey)) {
+      const snapshot = STORAGE_KEYS.reduce<Record<string, string | null>>((acc, key) => {
+        acc[key] = localStorage.getItem(key);
+        return acc;
+      }, {});
+
+      localStorage.setItem(backupKey, JSON.stringify({
+        fromVersion: previousVersion,
+        toVersion: STORAGE_VERSION,
+        createdAt: new Date().toISOString(),
+        snapshot,
+      }));
+    }
+
+    localStorage.setItem(STORAGE_VERSION_KEY, STORAGE_VERSION);
+  } catch {
+    // Best-effort only — never block the app from loading user data.
+  }
 }
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -73,6 +129,7 @@ interface AppStore {
 
   upsertBudget:         (b: LocalBudget) => void;
   createBudgetForMonth: (month: string) => void;
+  refreshBudgetForMonth:(month: string) => void;
   moveBudgetItem:       (month: string, itemId: string, newPotId: PotId) => void;
   setBudgetItemIncomeSource: (month: string, itemId: string, incomeSourceId: string) => void;
   setActiveBudgetMonth: (month: string) => void;
@@ -90,6 +147,7 @@ interface AppStore {
 
   setSourceArchived:  (id: string, archived: boolean) => void;
   removeEntry:        (id: string) => void;
+  movePot:            (id: string, direction: -1 | 1) => void;
   setPotArchived:     (id: string, archived: boolean) => void;
   setExpenseArchived: (id: string, archived: boolean) => void;
   setSavingArchived:  (id: string, archived: boolean) => void;
@@ -140,6 +198,19 @@ function setArchived<T extends { id: string; archived: boolean }>(
   prev: T[], id: string, archived: boolean,
 ): T[] {
   return prev.map(x => x.id === id ? { ...x, archived } : x);
+}
+
+function moveByDirection<T extends { id: string }>(prev: T[], id: string, direction: -1 | 1): T[] {
+  const index = prev.findIndex(item => item.id === id);
+  if (index < 0) return prev;
+
+  const targetIndex = index + direction;
+  if (targetIndex < 0 || targetIndex >= prev.length) return prev;
+
+  const next = [...prev];
+  const [item] = next.splice(index, 1);
+  next.splice(targetIndex, 0, item);
+  return next;
 }
 
 function currentYearMonth(): string {
@@ -478,6 +549,8 @@ export function AppProvider({
 
   // Runs once on the client after hydration — safe to access localStorage here.
   useEffect(() => {
+    ensureStorageUpgradeBackup();
+
     const loadedBudgets = load('wmp:budgets', MOCK_BUDGETS);
     const loadedSources = normalizeIncomeSources(load('wmp:sources', MOCK_INCOME_SOURCES), currentUserId);
     const loadedEntries = load('wmp:entries', MOCK_INCOME_ENTRIES);
@@ -612,6 +685,26 @@ export function AppProvider({
         return idx >= 0 ? prev.map(x => x.month === month ? budget : x) : [...prev, budget];
       });
     },
+    refreshBudgetForMonth: month => {
+      const visibleExpenseIds = new Set(visibleExpenses.map(expense => expense.id as string));
+      const nextExpenses = expenses.map(expense =>
+        visibleExpenseIds.has(expense.id as string)
+          ? applyPendingOneOffExpensesToBudgetMonth(month, [expense])[0]
+          : expense
+      );
+      const visibleNextExpenses = nextExpenses.filter(expense =>
+        isRecordVisible(expense, accessibleUserIds) && visiblePotIds.has(expense.potId as string)
+      );
+
+      setExpenses(nextExpenses);
+      setBudgets(prev => prev.map(budget => {
+        if (budget.month !== month) return budget;
+        return sanitizeBudgetForOneOffExpenses(
+          refreshBudget(budget, visibleNextExpenses, visibleSavings),
+          visibleNextExpenses,
+        );
+      }));
+    },
     moveBudgetItem: (month, itemId, newPotId) => setBudgets(prev =>
       prev.map(b => b.month !== month ? b : {
         ...b,
@@ -683,6 +776,7 @@ export function AppProvider({
 
     setSourceArchived:  (id, v) => setSources(prev  => setArchived(prev, id, v)),
     removeEntry:        id      => setEntries(prev   => prev.filter(e => e.id !== id)),
+    movePot:            (id, direction) => setPots(prev => moveByDirection(prev, id, direction)),
     setPotArchived:     (id, v) => setPots(prev      => setArchived(prev, id, v)),
     setExpenseArchived: (id, v) => setExpenses(prev  => setArchived(prev, id, v)),
     setSavingArchived:  (id, v) => setSavings(prev   => setArchived(prev, id, v)),

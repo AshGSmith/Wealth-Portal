@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Plus, Pencil, Archive, ArchiveRestore, ChevronDown, ChevronRight } from 'lucide-react';
+import { Plus, Pencil, Archive, ArchiveRestore, ChevronDown, ChevronRight, ArrowUp, ArrowDown } from 'lucide-react';
 import PageHeader from '@/components/layout/PageHeader';
 import PotForm from '@/components/pots/PotForm';
 import { useStore } from '@/lib/store';
@@ -69,8 +69,12 @@ export default function PotsPage() {
               <PotRow
                 key={pot.id}
                 pot={pot}
+                canMoveUp={active[0]?.id !== pot.id}
+                canMoveDown={active[active.length - 1]?.id !== pot.id}
                 accessibleUsers={store.accessibleUsers}
                 onEdit={() => openEdit(pot)}
+                onMoveUp={() => store.movePot(pot.id, -1)}
+                onMoveDown={() => store.movePot(pot.id, 1)}
                 onArchive={() => store.setPotArchived(pot.id, true)}
               />
             ))}
@@ -128,8 +132,12 @@ export default function PotsPage() {
 
 interface RowProps {
   pot: Pot;
+  canMoveUp?: boolean;
+  canMoveDown?: boolean;
   accessibleUsers: AccessibleUser[];
   onEdit: () => void;
+  onMoveUp?: () => void;
+  onMoveDown?: () => void;
   onArchive?: () => void;
   onRestore?: () => void;
   isArchived?: boolean;
@@ -148,7 +156,18 @@ function ownershipSummary(ownerUserIds: string[], accessibleUsers: AccessibleUse
   return { label: 'Personal', detail: owner?.name ?? 'Assigned to one user' };
 }
 
-function PotRow({ pot, accessibleUsers, onEdit, onArchive, onRestore, isArchived }: RowProps) {
+function PotRow({
+  pot,
+  canMoveUp,
+  canMoveDown,
+  accessibleUsers,
+  onEdit,
+  onMoveUp,
+  onMoveDown,
+  onArchive,
+  onRestore,
+  isArchived,
+}: RowProps) {
   const ownership = ownershipSummary(pot.ownerUserIds, accessibleUsers);
 
   return (
@@ -182,6 +201,32 @@ function PotRow({ pot, accessibleUsers, onEdit, onArchive, onRestore, isArchived
       </div>
 
       <div className="flex items-center gap-1 shrink-0">
+        {!isArchived ? (
+          <>
+            <button
+              onClick={onMoveUp}
+              disabled={!canMoveUp}
+              className="rounded-lg p-1.5 transition-colors disabled:opacity-35 disabled:cursor-not-allowed"
+              style={{ color: 'var(--muted)' }}
+              title="Move up"
+              onMouseEnter={e => { if (!e.currentTarget.disabled) e.currentTarget.style.background = 'var(--surface-hover)'; }}
+              onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
+            >
+              <ArrowUp size={13} />
+            </button>
+            <button
+              onClick={onMoveDown}
+              disabled={!canMoveDown}
+              className="rounded-lg p-1.5 transition-colors disabled:opacity-35 disabled:cursor-not-allowed"
+              style={{ color: 'var(--muted)' }}
+              title="Move down"
+              onMouseEnter={e => { if (!e.currentTarget.disabled) e.currentTarget.style.background = 'var(--surface-hover)'; }}
+              onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
+            >
+              <ArrowDown size={13} />
+            </button>
+          </>
+        ) : null}
         <button
           onClick={onEdit}
           className="rounded-lg p-1.5 transition-colors"

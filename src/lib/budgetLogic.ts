@@ -144,6 +144,34 @@ export function createBudget(
   };
 }
 
+export function refreshBudget(
+  budget: LocalBudget,
+  expenses: Expense[],
+  savings: Saving[],
+): LocalBudget {
+  const nextResolvedItems = resolveItemsForMonth(
+    budget.month,
+    applyPendingOneOffExpensesToBudgetMonth(budget.month, expenses),
+    savings,
+  );
+  const existingItemsById = new Map(budget.items.map(item => [item.id, item]));
+
+  return {
+    ...budget,
+    items: nextResolvedItems.map(item => {
+      const existingItem = existingItemsById.get(item.id);
+      if (!existingItem) return item;
+
+      return {
+        ...item,
+        potId: existingItem.potId,
+        incomeSourceId: existingItem.incomeSourceId,
+        ownerUserIds: existingItem.ownerUserIds,
+      };
+    }),
+  };
+}
+
 export function sanitizeBudgetForOneOffExpenses(
   budget: LocalBudget,
   expenses: Expense[],

@@ -33,7 +33,7 @@ function blank(pots: Pot[], sources: IncomeSource[], currentUserId: string | nul
   return {
     name: '',
     amount: '',
-    potId: pots.find(p => !p.archived)?.id ?? '',
+    potId: '',
     incomeSourceId: sources.find(source => !source.archived)?.id ?? '',
     startDate: '',
     endDate: '',

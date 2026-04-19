@@ -15,7 +15,14 @@ export default function Header({ auth }: { auth: AuthView | null }) {
   const isAuthRoute = AUTH_ROUTES.includes(pathname) || pathname.startsWith('/reset-password/');
 
   return (
-    <header className="sticky top-0 z-50 border-b" style={{ background: 'var(--surface)', borderColor: 'var(--border)' }}>
+    <header
+      className="sticky top-0 z-50 border-b"
+      style={{
+        background: 'var(--surface)',
+        borderColor: 'var(--border)',
+        paddingTop: 'var(--safe-area-top)',
+      }}
+    >
       <div className="mx-auto flex h-14 max-w-5xl items-center justify-between px-4">
         <div className="flex items-center gap-2">
           <div className="h-7 w-7 rounded-lg overflow-hidden shrink-0">

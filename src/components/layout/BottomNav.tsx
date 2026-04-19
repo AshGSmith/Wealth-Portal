@@ -19,9 +19,15 @@ export default function BottomNav({ isAdmin }: { isAdmin: boolean }) {
     <>
       <nav
         className="fixed bottom-0 left-0 right-0 z-40 border-t md:hidden"
-        style={{ background: 'var(--surface)', borderColor: 'var(--border)' }}
+        style={{
+          background: 'var(--surface)',
+          borderColor: 'var(--border)',
+          paddingBottom: 'var(--safe-area-bottom)',
+          paddingLeft: 'max(0.5rem, var(--safe-area-left))',
+          paddingRight: 'max(0.5rem, var(--safe-area-right))',
+        }}
       >
-        <div className="grid grid-cols-4 h-16">
+        <div className="grid grid-cols-4 min-h-16">
           {PRIMARY_NAV.map(({ href, label, icon: Icon }) => {
             const active = pathname === href;
             return (
@@ -57,7 +63,7 @@ export default function BottomNav({ isAdmin }: { isAdmin: boolean }) {
           onClick={() => setShowMore(false)}
         >
           <div
-            className="w-full rounded-t-2xl pb-8"
+            className="w-full rounded-t-2xl"
             style={{ background: 'var(--surface)' }}
             onClick={e => e.stopPropagation()}
           >
@@ -79,7 +85,10 @@ export default function BottomNav({ isAdmin }: { isAdmin: boolean }) {
             </div>
 
             {/* Secondary nav items */}
-            <div className="px-3 pt-2 grid grid-cols-2 gap-1">
+            <div
+              className="grid grid-cols-2 gap-1 px-3 pt-2"
+              style={{ paddingBottom: 'calc(2rem + var(--safe-area-bottom))' }}
+            >
               {secondaryNav.map(({ href, label, icon: Icon }) => {
                 const active = pathname === href;
                 return (

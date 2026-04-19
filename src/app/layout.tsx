@@ -1,4 +1,4 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import { Geist, Geist_Mono } from 'next/font/google';
 import './globals.css';
 import { ThemeProvider } from '@/lib/theme';
@@ -16,6 +16,17 @@ const geistMono = Geist_Mono({ variable: '--font-geist-mono', subsets: ['latin']
 export const metadata: Metadata = {
   title: 'Wealth Management Portal',
   description: 'Track your finances, budget, and wealth in one place.',
+  applicationName: 'WealthPortal',
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: 'black-translucent',
+    title: 'WealthPortal',
+  },
+};
+
+export const viewport: Viewport = {
+  themeColor: '#0b1220',
+  viewportFit: 'cover',
 };
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
@@ -69,7 +80,13 @@ export default async function RootLayout({ children }: { children: React.ReactNo
             {auth && <LegacyDataMigrationBanner />}
             <div className="flex flex-1 mx-auto w-full max-w-5xl">
               <Sidebar isAdmin={auth?.user.isAdmin ?? false} />
-              <main className="flex-1 min-w-0 p-4 pb-24 md:pb-6 md:p-6" style={{ background: 'var(--background)' }}>
+              <main
+                className="flex-1 min-w-0 p-4 md:pb-6 md:p-6"
+                style={{
+                  background: 'var(--background)',
+                  paddingBottom: 'calc(6.5rem + var(--safe-area-bottom))',
+                }}
+              >
                 {children}
               </main>
             </div>

@@ -238,11 +238,27 @@ function deleteSessionByHash(tokenHash: string): void {
   getDb().prepare('DELETE FROM sessions WHERE token_hash = ?').run(tokenHash);
 }
 
+function shouldUseSecureCookies(): boolean {
+  if (process.env.NODE_ENV !== 'production') return false;
+
+  const appUrl = process.env.APP_URL?.trim();
+  if (!appUrl) return true;
+
+  try {
+    const url = new URL(appUrl);
+    const hostname = url.hostname.toLowerCase();
+    const isLocalHost = hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1';
+    return url.protocol === 'https:' && !isLocalHost;
+  } catch {
+    return true;
+  }
+}
+
 function buildSessionCookieOptions(rememberMe: boolean) {
   return {
     httpOnly: true,
     sameSite: 'lax' as const,
-    secure: process.env.NODE_ENV === 'production',
+    secure: shouldUseSecureCookies(),
     path: '/',
     ...(rememberMe ? { maxAge: SESSION_REMEMBER_ME_SECONDS } : {}),
   };

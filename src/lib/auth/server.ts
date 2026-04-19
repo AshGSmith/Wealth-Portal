@@ -13,7 +13,8 @@ import type { AccessibleUser, AuthSession, AuthUser, AuthView, ManagedUser } fro
 
 const DATA_DIR = join(process.cwd(), '.data');
 const DB_PATH = join(DATA_DIR, 'wealth-portal.sqlite');
-export const SESSION_COOKIE_NAME = 'wm_session';
+export const SESSION_COOKIE_NAME = 'wm_session_v2';
+const LEGACY_SESSION_COOKIE_NAMES = ['wm_session'];
 const SESSION_REMEMBER_ME_SECONDS = 60 * 60 * 24 * 30;
 const SESSION_STANDARD_SECONDS = 60 * 60 * 12;
 const RESET_TOKEN_SECONDS = 60 * 60;
@@ -287,11 +288,17 @@ function createSessionRecord(userId: string, rememberMe: boolean, originalUserId
 
 async function setSessionCookie(token: string, rememberMe: boolean): Promise<void> {
   const cookieStore = await cookies();
+  for (const legacyCookieName of LEGACY_SESSION_COOKIE_NAMES) {
+    cookieStore.delete(legacyCookieName);
+  }
   cookieStore.set(SESSION_COOKIE_NAME, token, buildSessionCookieOptions(rememberMe));
 }
 
 export async function clearSessionCookie(): Promise<void> {
   const cookieStore = await cookies();
+  for (const legacyCookieName of LEGACY_SESSION_COOKIE_NAMES) {
+    cookieStore.delete(legacyCookieName);
+  }
   cookieStore.delete(SESSION_COOKIE_NAME);
 }
 

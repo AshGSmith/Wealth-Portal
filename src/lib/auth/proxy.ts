@@ -3,7 +3,7 @@ import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import Database from 'better-sqlite3';
 
-export const SESSION_COOKIE_NAME = 'wm_session';
+export const SESSION_COOKIE_NAME = 'wm_session_v2';
 
 let dbInstance: Database.Database | null = null;
 

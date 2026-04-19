@@ -7,11 +7,11 @@ services:
     container_name: wealth-management-portal
     restart: unless-stopped
     ports:
-      - "3000:3000"
+      - "3333:3000"
     environment:
       NODE_ENV: production
       PORT: 3000
-      APP_URL: ${APP_URL:-http://localhost:3000}
+      APP_URL: ${APP_URL:-http://localhost:3333}
       AUTH_BOOTSTRAP_ADMIN_NAME: ${AUTH_BOOTSTRAP_ADMIN_NAME:-Admin User}
       AUTH_BOOTSTRAP_ADMIN_EMAIL: ${AUTH_BOOTSTRAP_ADMIN_EMAIL:-admin@wealthportal.local}
       AUTH_BOOTSTRAP_ADMIN_PASSWORD: ${AUTH_BOOTSTRAP_ADMIN_PASSWORD:-ChangeMe123!}

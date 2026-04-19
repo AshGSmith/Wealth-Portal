@@ -21,12 +21,19 @@ export const metadata: Metadata = {
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const auth = await getAuthView();
   const showBirthdayMessage = auth ? isBirthdayMonth(auth.user.dateOfBirth) : false;
+  const appProviderKey = auth
+    ? `${auth.user.id}:${auth.originalUser?.id ?? 'self'}`
+    : 'anonymous';
 
   return (
     <html lang="en" suppressHydrationWarning>
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
         <ThemeProvider>
-          <AppProvider currentUserId={auth?.user.id ?? null} accessibleUsers={auth?.accessibleUsers ?? []}>
+          <AppProvider
+            key={appProviderKey}
+            currentUserId={auth?.user.id ?? null}
+            accessibleUsers={auth?.accessibleUsers ?? []}
+          >
           <div className="flex flex-col min-h-screen">
             <Header auth={auth} />
             {auth?.isImpersonating && auth.originalUser && (

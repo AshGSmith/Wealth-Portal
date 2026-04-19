@@ -451,7 +451,7 @@ export function AppProvider({
   // localStorage is loaded in the effect below, after hydration.
   const [hydrated,          setHydrated]          = useState(false);
   const [budgets,           setBudgets]           = useState<LocalBudget[]>(MOCK_BUDGETS);
-  const [activeBudgetMonth, setActiveBudgetMonth] = useState('2026-04');
+  const [activeBudgetMonth, setActiveBudgetMonth] = useState(currentYearMonth());
   const [sources,           setSources]           = useState<IncomeSource[]>(MOCK_INCOME_SOURCES);
   const [entries,           setEntries]           = useState<IncomeEntry[]> (MOCK_INCOME_ENTRIES);
   const [salaryHistory,     setSalaryHistory]     = useState<SalaryHistory[]>(MOCK_SALARY_HISTORY);
@@ -498,7 +498,7 @@ export function AppProvider({
     );
 
     setBudgets          (normalizeBudgets(migratedIncomeData.budgets, migratedIncomeData.expenses, migratedIncomeData.savings, currentUserId));
-    setActiveBudgetMonth(load('wmp:activeBudgetMonth', '2026-04'));
+    setActiveBudgetMonth(load('wmp:activeBudgetMonth', currentYearMonth()));
     setSources          (migratedIncomeData.sources);
     setEntries          (migratedIncomeData.entries);
     setSalaryHistory    (migratedIncomeData.salaryHistory);

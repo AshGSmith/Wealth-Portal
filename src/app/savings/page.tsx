@@ -6,6 +6,7 @@ import PageHeader from '@/components/layout/PageHeader';
 import SavingForm from '@/components/savings/SavingForm';
 import { useStore } from '@/lib/store';
 import type { Saving } from '@/lib/types';
+import type { AccessibleUser } from '@/lib/auth/types';
 import { fmtCurrency } from '@/lib/format';
 
 export default function SavingsPage() {
@@ -79,6 +80,7 @@ export default function SavingsPage() {
                 saving={saving}
                 potName={potName(saving.potId)}
                 sourceName={sourceName(saving.incomeSourceId)}
+                accessibleUsers={store.accessibleUsers}
                 onEdit={() => openEdit(saving)}
                 onArchive={() => store.setSavingArchived(saving.id, true)}
               />
@@ -110,6 +112,7 @@ export default function SavingsPage() {
                     saving={saving}
                     potName={potName(saving.potId)}
                     sourceName={sourceName(saving.incomeSourceId)}
+                    accessibleUsers={store.accessibleUsers}
                     onEdit={() => openEdit(saving)}
                     onRestore={() => store.setSavingArchived(saving.id, false)}
                     isArchived
@@ -126,6 +129,8 @@ export default function SavingsPage() {
         saving={editingSaving}
         pots={activePots}
         sources={activeSources}
+        ownerOptions={store.accessibleUsers}
+        currentUserId={store.currentUserId}
         open={showForm}
         onClose={() => setShowForm(false)}
         onSave={saving => store.upsertSaving(saving)}
@@ -140,6 +145,7 @@ interface RowProps {
   saving:     Saving;
   potName:    string;
   sourceName: string;
+  accessibleUsers: AccessibleUser[];
   onEdit:     () => void;
   onArchive?: () => void;
   onRestore?: () => void;
@@ -153,7 +159,22 @@ function dateRange(s: Saving): string {
   return `${start} – ${end}`;
 }
 
-function SavingRow({ saving, potName, sourceName, onEdit, onArchive, onRestore, isArchived }: RowProps) {
+function ownershipSummary(ownerUserIds: string[], accessibleUsers: AccessibleUser[]) {
+  if (ownerUserIds.length > 1) {
+    const names = accessibleUsers
+      .filter(user => ownerUserIds.includes(user.id))
+      .map(user => user.name)
+      .join(', ');
+    return { label: 'Joint', detail: names || `${ownerUserIds.length} users` };
+  }
+
+  const owner = accessibleUsers.find(user => ownerUserIds.includes(user.id));
+  return { label: 'Personal', detail: owner?.name ?? 'Assigned to one user' };
+}
+
+function SavingRow({ saving, potName, sourceName, accessibleUsers, onEdit, onArchive, onRestore, isArchived }: RowProps) {
+  const ownership = ownershipSummary(saving.ownerUserIds, accessibleUsers);
+
   return (
     <div
       className="flex items-center px-4 py-3 gap-3"
@@ -170,10 +191,17 @@ function SavingRow({ saving, potName, sourceName, onEdit, onArchive, onRestore, 
             </span>
           )}
           <span
+            className="shrink-0 rounded px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide"
+            style={{ background: 'var(--surface-hover)', color: 'var(--muted)' }}
+            title={ownership.detail}
+          >
+            {ownership.label}
+          </span>
+          <span
             className="text-sm font-medium truncate"
             style={{ color: isArchived ? 'var(--muted)' : 'var(--foreground)' }}
-          >
-            {saving.name}
+            >
+              {saving.name}
           </span>
         </div>
         <div className="flex items-center gap-2 mt-0.5 sm:hidden text-xs" style={{ color: 'var(--muted)' }}>

@@ -8,6 +8,8 @@ export interface ResolvedLineItem {
   sourceId:     string;
   incomeSourceId: IncomeSourceId;
   defaultIncomeSourceId: IncomeSourceId;
+  ownerUserIds: string[];
+  defaultOwnerUserIds: string[];
   name:         string;
   amount:       number;
   potId:        PotId;          // current assignment — may be overridden
@@ -52,6 +54,8 @@ function toResolvedExpenseItem(e: Expense): ResolvedLineItem {
     sourceId:     e.id,
     incomeSourceId: e.incomeSourceId,
     defaultIncomeSourceId: e.incomeSourceId,
+    ownerUserIds: e.ownerUserIds,
+    defaultOwnerUserIds: e.ownerUserIds,
     name:         e.name,
     amount:       e.amount,
     potId:        e.potId,
@@ -110,6 +114,8 @@ export function resolveItemsForMonth(
         sourceId:     s.id,
         incomeSourceId: s.incomeSourceId,
         defaultIncomeSourceId: s.incomeSourceId,
+        ownerUserIds: s.ownerUserIds,
+        defaultOwnerUserIds: s.ownerUserIds,
         name:         s.name,
         amount:       s.amount,
         potId:        s.potId,
@@ -160,6 +166,7 @@ export function sanitizeBudgetForOneOffExpenses(
           ...resolved,
           potId: item.potId,
           incomeSourceId: item.incomeSourceId,
+          ownerUserIds: item.ownerUserIds,
         });
         seenItemIds.add(item.id);
         continue;

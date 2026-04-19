@@ -9,6 +9,7 @@ import PageHeader from '@/components/layout/PageHeader';
 import SourceForm from '@/components/income/SourceForm';
 import EntryForm  from '@/components/income/EntryForm';
 import SalaryHistoryForm from '@/components/income/SalaryHistoryForm';
+import type { AccessibleUser } from '@/lib/auth/types';
 import { isSalarySource, latestAnnualSalary, salaryHistoryForSource } from '@/lib/incomeCalc';
 import { useStore } from '@/lib/store';
 import type { IncomeSource, IncomeEntry, IncomeSourceId, SalaryHistory } from '@/lib/types';
@@ -93,6 +94,7 @@ export default function IncomePage() {
               source={source}
               entries={entriesFor(source.id)}
               salaryHistory={salaryHistoryFor(source.id)}
+              accessibleUsers={store.accessibleUsers}
               expanded={expanded.has(source.id)}
               onToggle={() => toggleExpand(source.id)}
               onEditSource={() => setSourceModal(source)}
@@ -125,6 +127,7 @@ export default function IncomePage() {
                   source={source}
                   entries={entriesFor(source.id)}
                   salaryHistory={salaryHistoryFor(source.id)}
+                  accessibleUsers={store.accessibleUsers}
                   expanded={expanded.has(source.id)}
                   onToggle={() => toggleExpand(source.id)}
                   onEditSource={() => setSourceModal(source)}
@@ -147,6 +150,8 @@ export default function IncomePage() {
         open={sourceModal !== false}
         onClose={() => setSourceModal(false)}
         onSave={handleSaveSource}
+        ownerOptions={store.accessibleUsers}
+        currentUserId={store.currentUserId}
       />
 
       <EntryForm
@@ -181,6 +186,7 @@ interface CardProps {
   source:           IncomeSource;
   entries:          IncomeEntry[];
   salaryHistory:    SalaryHistory[];
+  accessibleUsers:  AccessibleUser[];
   expanded:         boolean;
   onToggle:         () => void;
   onEditSource:     () => void;
@@ -199,8 +205,21 @@ function fmtDate(iso: string) {
   });
 }
 
+function ownershipSummary(ownerUserIds: string[], accessibleUsers: AccessibleUser[]) {
+  if (ownerUserIds.length > 1) {
+    const names = accessibleUsers
+      .filter(user => ownerUserIds.includes(user.id))
+      .map(user => user.name)
+      .join(', ');
+    return { label: 'Joint', detail: names || `${ownerUserIds.length} users` };
+  }
+
+  const owner = accessibleUsers.find(user => ownerUserIds.includes(user.id));
+  return { label: 'Personal', detail: owner?.name ?? 'Assigned to you' };
+}
+
 function SourceCard({
-  source, entries, salaryHistory, expanded, onToggle,
+  source, entries, salaryHistory, accessibleUsers, expanded, onToggle,
   onEditSource, onArchiveSource, onRestoreSource,
   onAddSalaryChange, onAddEntry, onEditEntry, onArchiveEntry,
   isArchived,
@@ -208,6 +227,7 @@ function SourceCard({
   const total = entries.reduce((s, e) => s + e.amount, 0);
   const salaryEnabled = isSalarySource(source);
   const latestSalary = latestAnnualSalary(source, salaryHistory);
+  const ownership = ownershipSummary(source.ownerUserIds, accessibleUsers);
 
   return (
     <div
@@ -238,6 +258,14 @@ function SourceCard({
             {fmtCurrency(total)}
           </span>
         )}
+
+        <span
+          className="hidden shrink-0 rounded px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide sm:inline-flex"
+          style={{ background: ownership.label === 'Joint' ? '#2563eb18' : 'var(--surface-hover)', color: ownership.label === 'Joint' ? '#2563eb' : 'var(--muted)' }}
+          title={ownership.detail}
+        >
+          {ownership.label}
+        </span>
 
         <div className="flex items-center gap-0.5 shrink-0" onClick={e => e.stopPropagation()}>
           <button
@@ -278,6 +306,11 @@ function SourceCard({
 
       {expanded && (
         <div className="border-t" style={{ borderColor: 'var(--border)' }}>
+          <div className="border-b px-4 py-2" style={{ borderColor: 'var(--border)', background: 'var(--background)' }}>
+            <p className="text-[11px] font-medium uppercase tracking-wide" style={{ color: 'var(--muted)' }}>
+              {ownership.label} source
+            </p>
+          </div>
           {salaryEnabled && (
             <div className="border-b px-4 py-3 space-y-3" style={{ borderColor: 'var(--border)', background: 'var(--surface-hover)' }}>
               <div className="flex items-start justify-between gap-3">

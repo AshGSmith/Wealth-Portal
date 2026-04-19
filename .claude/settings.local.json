@@ -9,7 +9,8 @@
       "Bash(sed -i '' 's/\"name\": \"wmp\"/\"name\": \"wealth-management-portal\"/' \"/Users/ash/Documents/Apps/Wealth Management Portal/package.json\")",
       "Bash(npm install *)",
       "Bash(npx tsc *)",
-      "mcp__Claude_Preview__preview_start"
+      "mcp__Claude_Preview__preview_start",
+      "Bash(npx next *)"
     ]
   }
 }

@@ -6,6 +6,7 @@ import PageHeader from '@/components/layout/PageHeader';
 import PotForm from '@/components/pots/PotForm';
 import { useStore } from '@/lib/store';
 import type { Pot } from '@/lib/types';
+import type { AccessibleUser } from '@/lib/auth/types';
 
 export default function PotsPage() {
   const store = useStore();
@@ -68,6 +69,7 @@ export default function PotsPage() {
               <PotRow
                 key={pot.id}
                 pot={pot}
+                accessibleUsers={store.accessibleUsers}
                 onEdit={() => openEdit(pot)}
                 onArchive={() => store.setPotArchived(pot.id, true)}
               />
@@ -97,6 +99,7 @@ export default function PotsPage() {
                   <PotRow
                     key={pot.id}
                     pot={pot}
+                    accessibleUsers={store.accessibleUsers}
                     onEdit={() => openEdit(pot)}
                     onRestore={() => store.setPotArchived(pot.id, false)}
                     isArchived
@@ -111,6 +114,8 @@ export default function PotsPage() {
       <PotForm
         key={`${editingPot?.id ?? 'new'}-${showForm ? 'open' : 'closed'}`}
         pot={editingPot}
+        ownerOptions={store.accessibleUsers}
+        currentUserId={store.currentUserId}
         open={showForm}
         onClose={() => setShowForm(false)}
         onSave={pot => store.upsertPot(pot)}
@@ -123,13 +128,29 @@ export default function PotsPage() {
 
 interface RowProps {
   pot: Pot;
+  accessibleUsers: AccessibleUser[];
   onEdit: () => void;
   onArchive?: () => void;
   onRestore?: () => void;
   isArchived?: boolean;
 }
 
-function PotRow({ pot, onEdit, onArchive, onRestore, isArchived }: RowProps) {
+function ownershipSummary(ownerUserIds: string[], accessibleUsers: AccessibleUser[]) {
+  if (ownerUserIds.length > 1) {
+    const names = accessibleUsers
+      .filter(user => ownerUserIds.includes(user.id))
+      .map(user => user.name)
+      .join(', ');
+    return { label: 'Joint', detail: names || `${ownerUserIds.length} users` };
+  }
+
+  const owner = accessibleUsers.find(user => ownerUserIds.includes(user.id));
+  return { label: 'Personal', detail: owner?.name ?? 'Assigned to one user' };
+}
+
+function PotRow({ pot, accessibleUsers, onEdit, onArchive, onRestore, isArchived }: RowProps) {
+  const ownership = ownershipSummary(pot.ownerUserIds, accessibleUsers);
+
   return (
     <div
       className="flex items-center px-4 py-3 gap-3"
@@ -143,13 +164,20 @@ function PotRow({ pot, onEdit, onArchive, onRestore, isArchived }: RowProps) {
           {pot.name}
         </p>
         <p className="text-xs mt-0.5 sm:hidden" style={{ color: 'var(--muted)' }}>
-          {pot.isBusiness ? 'Business pot' : 'Personal pot'}
+          {pot.isBusiness ? 'Business pot' : 'Personal pot'} · {ownership.label}
         </p>
       </div>
 
       <div className="hidden sm:flex flex-1 items-center gap-1.5 min-w-0">
         <span className="text-sm truncate" style={{ color: 'var(--muted)' }}>
           {pot.isBusiness ? 'Business' : 'Personal'}
+        </span>
+        <span
+          className="rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
+          style={{ background: 'var(--surface-hover)', color: 'var(--muted)' }}
+          title={ownership.detail}
+        >
+          {ownership.label}
         </span>
       </div>
 

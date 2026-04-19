@@ -1,24 +1,29 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import Sheet from '@/components/ui/Sheet';
+import OwnerSelector from '@/components/ui/OwnerSelector';
+import type { AccessibleUser } from '@/lib/auth/types';
 import type { SavingsAccount, SavingsAccountId } from '@/lib/types';
 
 interface Props {
-  account: SavingsAccount | null;
-  open:    boolean;
-  onClose: () => void;
-  onSave:  (account: SavingsAccount) => void;
+  account:        SavingsAccount | null;
+  open:           boolean;
+  onClose:        () => void;
+  onSave:         (account: SavingsAccount) => void;
+  ownerOptions:   AccessibleUser[];
+  currentUserId:  string | null;
 }
 
 interface FormState {
   name:           string;
   currentBalance: string;
   interestRate:   string;
+  ownerUserIds:   string[];
 }
 
-function blank(): FormState {
-  return { name: '', currentBalance: '', interestRate: '' };
+function blank(currentUserId: string | null): FormState {
+  return { name: '', currentBalance: '', interestRate: '', ownerUserIds: currentUserId ? [currentUserId] : [] };
 }
 
 function fromAccount(a: SavingsAccount): FormState {
@@ -26,6 +31,7 @@ function fromAccount(a: SavingsAccount): FormState {
     name:           a.name,
     currentBalance: String(a.currentBalance),
     interestRate:   String(a.interestRate * 100),
+    ownerUserIds:   a.ownerUserIds,
   };
 }
 
@@ -35,15 +41,11 @@ const inputStyle = {
   color: 'var(--foreground)', colorScheme: 'dark' as const,
 };
 
-export default function SavingsAccountForm({ account, open, onClose, onSave }: Props) {
-  const [form,   setForm]   = useState<FormState>(() => account ? fromAccount(account) : blank());
+export default function SavingsAccountForm({ account, open, onClose, onSave, ownerOptions, currentUserId }: Props) {
+  const [form,   setForm]   = useState<FormState>(() => account ? fromAccount(account) : blank(currentUserId));
   const [errors, setErrors] = useState<Partial<Record<keyof FormState, string>>>({});
 
-  useEffect(() => {
-    if (open) { setForm(account ? fromAccount(account) : blank()); setErrors({}); }
-  }, [open, account]);
-
-  function set<K extends keyof FormState>(key: K, value: string) {
+  function set<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm(prev => ({ ...prev, [key]: value }));
     setErrors(prev => ({ ...prev, [key]: undefined }));
   }
@@ -51,6 +53,7 @@ export default function SavingsAccountForm({ account, open, onClose, onSave }: P
   function validate(): boolean {
     const errs: Partial<Record<keyof FormState, string>> = {};
     if (!form.name.trim())                         errs.name           = 'Required';
+    if (form.ownerUserIds.length === 0)            errs.ownerUserIds   = 'Required';
     if (!form.currentBalance.trim())               errs.currentBalance = 'Required';
     else if (Number(form.currentBalance) < 0)      errs.currentBalance = 'Must be ≥ 0';
     if (!form.interestRate.trim())                 errs.interestRate   = 'Required';
@@ -66,6 +69,7 @@ export default function SavingsAccountForm({ account, open, onClose, onSave }: P
       name:           form.name.trim(),
       currentBalance: parseFloat(form.currentBalance),
       interestRate:   parseFloat(form.interestRate) / 100,
+      ownerUserIds:   form.ownerUserIds,
       archived:       account?.archived ?? false,
     });
     onClose();
@@ -108,6 +112,18 @@ export default function SavingsAccountForm({ account, open, onClose, onSave }: P
             className={inputCls}
             style={{ ...inputStyle, borderColor: errors.name ? '#f43f5e' : 'var(--border)' }} />
           {errors.name && <p className="mt-1 text-xs text-rose-500">{errors.name}</p>}
+        </div>
+
+        <div>
+          <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--muted)' }}>
+            Owners <span className="text-rose-500">*</span>
+          </label>
+          <OwnerSelector
+            options={ownerOptions}
+            value={form.ownerUserIds}
+            onChange={value => set('ownerUserIds', value)}
+          />
+          {errors.ownerUserIds && <p className="mt-1 text-xs text-rose-500">{errors.ownerUserIds}</p>}
         </div>
 
         {/* Current balance */}

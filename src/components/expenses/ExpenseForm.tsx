@@ -2,12 +2,16 @@
 
 import { useState } from 'react';
 import Sheet from '@/components/ui/Sheet';
+import OwnerSelector from '@/components/ui/OwnerSelector';
+import type { AccessibleUser } from '@/lib/auth/types';
 import type { Expense, Pot, ExpenseId, PotId, IncomeSource, IncomeSourceId } from '@/lib/types';
 
 interface Props {
   expense: Expense | null;
   pots: Pot[];
   sources: IncomeSource[];
+  ownerOptions: AccessibleUser[];
+  currentUserId: string | null;
   open: boolean;
   onClose: () => void;
   onSave: (expense: Expense) => void;
@@ -22,9 +26,10 @@ interface FormState {
   endDate:    string;
   isCritical: boolean;
   oneOffPayment: boolean;
+  ownerUserIds: string[];
 }
 
-function blank(pots: Pot[], sources: IncomeSource[]): FormState {
+function blank(pots: Pot[], sources: IncomeSource[], currentUserId: string | null): FormState {
   return {
     name: '',
     amount: '',
@@ -34,6 +39,7 @@ function blank(pots: Pot[], sources: IncomeSource[]): FormState {
     endDate: '',
     isCritical: false,
     oneOffPayment: false,
+    ownerUserIds: currentUserId ? [currentUserId] : [],
   };
 }
 function fromExpense(e: Expense): FormState {
@@ -46,14 +52,15 @@ function fromExpense(e: Expense): FormState {
     endDate: e.endDate ?? '',
     isCritical: e.isCritical,
     oneOffPayment: e.oneOffPayment,
+    ownerUserIds: e.ownerUserIds,
   };
 }
 
 const inputCls = 'w-full rounded-lg border px-3 py-2.5 text-sm outline-none transition-colors';
 const inputStyle = { background: 'var(--surface-hover)', borderColor: 'var(--border)', color: 'var(--foreground)', colorScheme: 'dark' as const };
 
-export default function ExpenseForm({ expense, pots, sources, open, onClose, onSave }: Props) {
-  const [form, setForm]     = useState<FormState>(() => expense ? fromExpense(expense) : blank(pots, sources));
+export default function ExpenseForm({ expense, pots, sources, ownerOptions, currentUserId, open, onClose, onSave }: Props) {
+  const [form, setForm]     = useState<FormState>(() => expense ? fromExpense(expense) : blank(pots, sources, currentUserId));
   const [errors, setErrors] = useState<Partial<Record<keyof FormState, string>>>({});
 
   function set<K extends keyof FormState>(key: K, value: FormState[K]) {
@@ -68,6 +75,7 @@ export default function ExpenseForm({ expense, pots, sources, open, onClose, onS
     else if (Number(form.amount) <= 0) errs.amount = 'Must be > 0';
     if (!form.potId)                  errs.potId  = 'Required';
     if (!form.incomeSourceId)         errs.incomeSourceId = 'Required';
+    if (form.ownerUserIds.length === 0) errs.ownerUserIds = 'Required';
     if (form.startDate && form.endDate && form.endDate < form.startDate) errs.endDate = 'Must be after start date';
     setErrors(errs);
     return Object.keys(errs).length === 0;
@@ -81,6 +89,7 @@ export default function ExpenseForm({ expense, pots, sources, open, onClose, onS
       amount:     parseFloat(form.amount),
       potId:      form.potId as PotId,
       incomeSourceId: form.incomeSourceId as IncomeSourceId,
+      ownerUserIds: form.ownerUserIds,
       startDate:  form.startDate || null,
       endDate:    form.endDate   || null,
       isCritical: form.isCritical,
@@ -206,6 +215,13 @@ export default function ExpenseForm({ expense, pots, sources, open, onClose, onS
             </p>
           </div>
         </label>
+
+        <OwnerSelector
+          value={form.ownerUserIds}
+          options={ownerOptions}
+          onChange={value => set('ownerUserIds', value)}
+        />
+        {errors.ownerUserIds && <p className="mt-1 text-xs text-rose-500">{errors.ownerUserIds}</p>}
       </div>
     </Sheet>
   );

@@ -2,34 +2,41 @@
 
 import { useState } from 'react';
 import Sheet from '@/components/ui/Sheet';
+import OwnerSelector from '@/components/ui/OwnerSelector';
+import type { AccessibleUser } from '@/lib/auth/types';
 import type { IncomeSource, IncomeSourceId } from '@/lib/types';
 import { INCOME_SOURCE_TYPES, type IncomeSourceType } from '@/lib/constants';
 import { fmtSourceType } from '@/lib/format';
 
 interface Props {
-  source:  IncomeSource | null;
-  open:    boolean;
-  onClose: () => void;
-  onSave:  (source: IncomeSource) => void;
+  source:         IncomeSource | null;
+  open:           boolean;
+  onClose:        () => void;
+  onSave:         (source: IncomeSource) => void;
+  ownerOptions:   AccessibleUser[];
+  currentUserId:  string | null;
 }
 
 
-interface FormState { provider: string; type: IncomeSourceType; startingAnnualSalary: string; }
+interface FormState { provider: string; type: IncomeSourceType; startingAnnualSalary: string; ownerUserIds: string[]; }
 
-function blank(): FormState { return { provider: '', type: 'salary', startingAnnualSalary: '' }; }
+function blank(currentUserId: string | null): FormState {
+  return { provider: '', type: 'salary', startingAnnualSalary: '', ownerUserIds: currentUserId ? [currentUserId] : [] };
+}
 function fromSource(s: IncomeSource): FormState {
   return {
     provider: s.provider,
     type: s.type,
     startingAnnualSalary: s.startingAnnualSalary !== null ? String(s.startingAnnualSalary) : '',
+    ownerUserIds: s.ownerUserIds,
   };
 }
 
 const inputCls = 'w-full rounded-lg border px-3 py-2.5 text-sm outline-none transition-colors';
 const inputStyle = { background: 'var(--surface-hover)', borderColor: 'var(--border)', color: 'var(--foreground)', colorScheme: 'dark' as const };
 
-export default function SourceForm({ source, open, onClose, onSave }: Props) {
-  const [form, setForm]     = useState<FormState>(() => source ? fromSource(source) : blank());
+export default function SourceForm({ source, open, onClose, onSave, ownerOptions, currentUserId }: Props) {
+  const [form, setForm]     = useState<FormState>(() => source ? fromSource(source) : blank(currentUserId));
   const [errors, setErrors] = useState<Partial<Record<keyof FormState, string>>>({});
 
   function set<K extends keyof FormState>(key: K, value: FormState[K]) {
@@ -40,6 +47,7 @@ export default function SourceForm({ source, open, onClose, onSave }: Props) {
   function validate(): boolean {
     const errs: typeof errors = {};
     if (!form.provider.trim()) errs.provider = 'Required';
+    if (form.ownerUserIds.length === 0) errs.ownerUserIds = 'Required';
     if (form.type === 'salary' && form.startingAnnualSalary.trim() && Number(form.startingAnnualSalary) <= 0) {
       errs.startingAnnualSalary = 'Must be > 0';
     }
@@ -56,6 +64,7 @@ export default function SourceForm({ source, open, onClose, onSave }: Props) {
       startingAnnualSalary: form.type === 'salary' && form.startingAnnualSalary.trim()
         ? parseFloat(form.startingAnnualSalary)
         : null,
+      ownerUserIds:         form.ownerUserIds,
       archived:             source?.archived ?? false,
     });
     onClose();
@@ -101,6 +110,18 @@ export default function SourceForm({ source, open, onClose, onSave }: Props) {
             className={inputCls} style={inputStyle}>
             {INCOME_SOURCE_TYPES.map(t => <option key={t} value={t}>{fmtSourceType(t)}</option>)}
           </select>
+        </div>
+
+        <div>
+          <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--muted)' }}>
+            Owners <span className="text-rose-500">*</span>
+          </label>
+          <OwnerSelector
+            options={ownerOptions}
+            value={form.ownerUserIds}
+            onChange={value => set('ownerUserIds', value)}
+          />
+          {errors.ownerUserIds && <p className="mt-1 text-xs text-rose-500">{errors.ownerUserIds}</p>}
         </div>
 
         {form.type === 'salary' && (

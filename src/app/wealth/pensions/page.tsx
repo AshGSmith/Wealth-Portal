@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { Plus, Pencil, Archive, ArchiveRestore, ChevronDown, ChevronRight, Briefcase } from 'lucide-react';
 import PageHeader from '@/components/layout/PageHeader';
 import PensionForm from '@/components/wealth/PensionForm';
+import type { AccessibleUser } from '@/lib/auth/types';
 import { useStore } from '@/lib/store';
 import type { Pension, PensionHistory, PensionHistoryId } from '@/lib/types';
 import { fmtCurrency } from '@/lib/format';
@@ -76,6 +77,7 @@ export default function PensionsPage() {
               key={p.id}
               pension={p}
               history={historyFor(p.id)}
+              accessibleUsers={store.accessibleUsers}
               onEdit={() => openEdit(p)}
               onArchive={() => store.setPensionArchived(p.id, true)}
             />
@@ -100,6 +102,7 @@ export default function PensionsPage() {
                   key={p.id}
                   pension={p}
                   history={historyFor(p.id)}
+                  accessibleUsers={store.accessibleUsers}
                   onEdit={() => openEdit(p)}
                   onRestore={() => store.setPensionArchived(p.id, false)}
                   isArchived
@@ -111,10 +114,13 @@ export default function PensionsPage() {
       )}
 
       <PensionForm
+        key={`${editing?.id ?? 'new'}-${showForm ? 'open' : 'closed'}`}
         pension={editing}
         open={showForm}
         onClose={() => setShowForm(false)}
         onSave={handleSave}
+        ownerOptions={store.accessibleUsers}
+        currentUserId={store.currentUserId}
       />
     </>
   );
@@ -125,18 +131,33 @@ export default function PensionsPage() {
 interface RowProps {
   pension:    Pension;
   history:    PensionHistory[];
+  accessibleUsers: AccessibleUser[];
   onEdit:     () => void;
   onArchive?: () => void;
   onRestore?: () => void;
   isArchived?: boolean;
 }
 
-function PensionRow({ pension: p, history, onEdit, onArchive, onRestore, isArchived }: RowProps) {
+function ownershipSummary(ownerUserIds: string[], accessibleUsers: AccessibleUser[]) {
+  if (ownerUserIds.length > 1) {
+    const names = accessibleUsers
+      .filter(user => ownerUserIds.includes(user.id))
+      .map(user => user.name)
+      .join(', ');
+    return { label: 'Joint', detail: names || `${ownerUserIds.length} users` };
+  }
+
+  const owner = accessibleUsers.find(user => ownerUserIds.includes(user.id));
+  return { label: 'Personal', detail: owner?.name ?? 'Assigned to you' };
+}
+
+function PensionRow({ pension: p, history, accessibleUsers, onEdit, onArchive, onRestore, isArchived }: RowProps) {
   const [expanded, setExpanded] = useState(false);
 
   const prev   = history[0];
   const change = prev ? p.currentBalance - prev.balance : null;
   const isGain = change !== null && change >= 0;
+  const ownership = ownershipSummary(p.ownerUserIds, accessibleUsers);
 
   return (
     <div className="rounded-xl border overflow-hidden" style={{ background: 'var(--surface)', borderColor: 'var(--border)' }}>
@@ -152,7 +173,7 @@ function PensionRow({ pension: p, history, onEdit, onArchive, onRestore, isArchi
             {p.name}
           </p>
           <p className="text-xs mt-0.5" style={{ color: 'var(--muted)' }}>
-            {p.provider}
+            {p.provider} · {ownership.label}
           </p>
         </div>
 

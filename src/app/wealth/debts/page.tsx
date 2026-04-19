@@ -15,6 +15,7 @@ import {
 import PageHeader from '@/components/layout/PageHeader';
 import DebtForm from '@/components/wealth/DebtForm';
 import DebtTransactionSheet from '@/components/wealth/DebtTransactionSheet';
+import type { AccessibleUser } from '@/lib/auth/types';
 import { useStore } from '@/lib/store';
 import type { Debt, DebtHistory, DebtHistoryId, DebtTransaction, DebtTransactionType } from '@/lib/types';
 import { fmtCurrency } from '@/lib/format';
@@ -116,6 +117,7 @@ export default function DebtsPage() {
               debt={d}
               history={historyFor(d.id)}
               transactions={transactionsFor(d.id)}
+              accessibleUsers={store.accessibleUsers}
               onEdit={() => openEdit(d)}
               onPurchase={d.debtType === 'credit-card' ? () => openTransaction(d, 'purchase') : undefined}
               onPayment={d.debtType === 'credit-card' ? () => openTransaction(d, 'payment') : undefined}
@@ -143,6 +145,7 @@ export default function DebtsPage() {
                   debt={d}
                   history={historyFor(d.id)}
                   transactions={transactionsFor(d.id)}
+                  accessibleUsers={store.accessibleUsers}
                   onEdit={() => openEdit(d)}
                   onRestore={() => store.setDebtArchived(d.id, false)}
                   isArchived
@@ -154,10 +157,13 @@ export default function DebtsPage() {
       )}
 
       <DebtForm
+        key={`${editing?.id ?? 'new'}-${showForm ? 'open' : 'closed'}`}
         debt={editing}
         open={showForm}
         onClose={() => setShowForm(false)}
         onSave={handleSave}
+        ownerOptions={store.accessibleUsers}
+        currentUserId={store.currentUserId}
       />
 
       <DebtTransactionSheet
@@ -175,6 +181,7 @@ interface RowProps {
   debt: Debt;
   history: DebtHistory[];
   transactions: DebtTransaction[];
+  accessibleUsers?: AccessibleUser[];
   onEdit: () => void;
   onPurchase?: () => void;
   onPayment?: () => void;
@@ -183,7 +190,20 @@ interface RowProps {
   isArchived?: boolean;
 }
 
-function DebtRow({ debt: d, history, transactions, onEdit, onPurchase, onPayment, onArchive, onRestore, isArchived }: RowProps) {
+function ownershipSummary(ownerUserIds: string[], accessibleUsers: AccessibleUser[]) {
+  if (ownerUserIds.length > 1) {
+    const names = accessibleUsers
+      .filter(user => ownerUserIds.includes(user.id))
+      .map(user => user.name)
+      .join(', ');
+    return { label: 'Joint', detail: names || `${ownerUserIds.length} users` };
+  }
+
+  const owner = accessibleUsers.find(user => ownerUserIds.includes(user.id));
+  return { label: 'Personal', detail: owner?.name ?? 'Assigned to you' };
+}
+
+function DebtRow({ debt: d, history, transactions, accessibleUsers = [], onEdit, onPurchase, onPayment, onArchive, onRestore, isArchived }: RowProps) {
   const [expanded, setExpanded] = useState(false);
 
   const isLoan = d.debtType === 'loan';
@@ -201,6 +221,7 @@ function DebtRow({ debt: d, history, transactions, onEdit, onPurchase, onPayment
   const change = prev ? d.currentBalance - prev.balance : null;
   const isDown = change !== null && change <= 0;
   const hasActivity = history.length > 0 || transactions.length > 0;
+  const ownership = ownershipSummary(d.ownerUserIds, accessibleUsers);
   const activity = [
     ...transactions.map(transaction => ({ kind: 'transaction' as const, date: transaction.date, entry: transaction })),
     ...history.map(item => ({ kind: 'history' as const, date: item.date, entry: item })),
@@ -226,7 +247,7 @@ function DebtRow({ debt: d, history, transactions, onEdit, onPurchase, onPayment
             </span>
           </div>
           <p className="mt-0.5 text-xs" style={{ color: 'var(--muted)' }}>
-            {d.provider}{d.interestRate > 0 ? ` · ${(d.interestRate * 100).toFixed(2)}% APR` : ''}
+            {d.provider}{d.interestRate > 0 ? ` · ${(d.interestRate * 100).toFixed(2)}% APR` : ''} · {ownership.label}
           </p>
         </div>
 

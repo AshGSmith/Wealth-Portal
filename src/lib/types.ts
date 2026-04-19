@@ -40,6 +40,10 @@ export type { IncomeSourceType } from './constants';
 
 // ─── Entities ────────────────────────────────────────────────────────────────
 
+interface OwnedRecord {
+  ownerUserIds: string[];
+}
+
 /**
  * A monthly budget plan.
  * Acts as a top-level container for a given month. Expenses and Savings are
@@ -55,7 +59,7 @@ export interface Budget {
  * An income stream (e.g. "Civica salary", "Freelance clients").
  * Parent of: IncomeEntry
  */
-export interface IncomeSource {
+export interface IncomeSource extends OwnedRecord {
   id:                   IncomeSourceId;
   type:                 IncomeSourceType;
   provider:             string;        // human label, e.g. "Civica"
@@ -93,6 +97,7 @@ export interface Pot {
   id:         PotId;
   name:       string;
   isBusiness: boolean;
+  ownerUserIds: string[];
   archived:   boolean;
 }
 
@@ -100,7 +105,7 @@ export interface Pot {
  * Shared shape for Expense and Saving line items.
  * startDate/endDate define the active window; both null = open-ended / ongoing.
  */
-interface LineItem {
+interface LineItem extends OwnedRecord {
   id:             string;
   name:           string;
   amount:         number;          // positive, in base currency units
@@ -160,7 +165,7 @@ export interface BudgetSummary {
  * A mortgage product. Standalone — linked to a Property via Property.mortgageId.
  * Parent of: MortgagePayment
  */
-export interface Mortgage {
+export interface Mortgage extends OwnedRecord {
   id:               MortgageId;
   lender:           string;
   amountBorrowed:   number;         // original loan amount
@@ -186,7 +191,7 @@ export interface MortgagePayment {
  * A property asset.
  * Optionally linked to a Mortgage via mortgageId.
  */
-export interface Property {
+export interface Property extends OwnedRecord {
   id:               PropertyId;
   name:             string;
   address:          string;
@@ -203,7 +208,7 @@ export interface Property {
  * A savings or cash account.
  * Parent of: SavingsHistory (point-in-time balance snapshots)
  */
-export interface SavingsAccount {
+export interface SavingsAccount extends OwnedRecord {
   id:              SavingsAccountId;
   name:            string;
   currentBalance:  number;
@@ -225,7 +230,7 @@ export interface SavingsHistory {
  * A liability (loan, credit card, etc.).
  * Parent of: DebtHistory (point-in-time balance snapshots)
  */
-export interface Debt {
+export interface Debt extends OwnedRecord {
   id:             DebtId;
   debtType:       DebtType;
   name:           string;
@@ -267,7 +272,7 @@ export interface DebtTransaction {
  * A pension pot.
  * Parent of: PensionHistory (point-in-time balance snapshots)
  */
-export interface Pension {
+export interface Pension extends OwnedRecord {
   id:             PensionId;
   name:           string;
   provider:       string;

@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { Plus, Pencil, Archive, ArchiveRestore, ChevronDown, ChevronRight, PiggyBank } from 'lucide-react';
 import PageHeader from '@/components/layout/PageHeader';
 import SavingsAccountForm from '@/components/wealth/SavingsAccountForm';
+import type { AccessibleUser } from '@/lib/auth/types';
 import { useStore } from '@/lib/store';
 import type { SavingsAccount, SavingsHistory, SavingsHistoryId } from '@/lib/types';
 import { fmtCurrency } from '@/lib/format';
@@ -78,6 +79,7 @@ export default function SavingsPage() {
               key={a.id}
               account={a}
               history={historyFor(a.id)}
+              accessibleUsers={store.accessibleUsers}
               onEdit={() => openEdit(a)}
               onArchive={() => store.setSavingsAccountArchived(a.id, true)}
             />
@@ -102,6 +104,7 @@ export default function SavingsPage() {
                   key={a.id}
                   account={a}
                   history={historyFor(a.id)}
+                  accessibleUsers={store.accessibleUsers}
                   onEdit={() => openEdit(a)}
                   onRestore={() => store.setSavingsAccountArchived(a.id, false)}
                   isArchived
@@ -113,10 +116,13 @@ export default function SavingsPage() {
       )}
 
       <SavingsAccountForm
+        key={`${editing?.id ?? 'new'}-${showForm ? 'open' : 'closed'}`}
         account={editing}
         open={showForm}
         onClose={() => setShowForm(false)}
         onSave={handleSave}
+        ownerOptions={store.accessibleUsers}
+        currentUserId={store.currentUserId}
       />
     </>
   );
@@ -127,18 +133,33 @@ export default function SavingsPage() {
 interface RowProps {
   account:    SavingsAccount;
   history:    SavingsHistory[];
+  accessibleUsers: AccessibleUser[];
   onEdit:     () => void;
   onArchive?: () => void;
   onRestore?: () => void;
   isArchived?: boolean;
 }
 
-function AccountRow({ account: a, history, onEdit, onArchive, onRestore, isArchived }: RowProps) {
+function ownershipSummary(ownerUserIds: string[], accessibleUsers: AccessibleUser[]) {
+  if (ownerUserIds.length > 1) {
+    const names = accessibleUsers
+      .filter(user => ownerUserIds.includes(user.id))
+      .map(user => user.name)
+      .join(', ');
+    return { label: 'Joint', detail: names || `${ownerUserIds.length} users` };
+  }
+
+  const owner = accessibleUsers.find(user => ownerUserIds.includes(user.id));
+  return { label: 'Personal', detail: owner?.name ?? 'Assigned to you' };
+}
+
+function AccountRow({ account: a, history, accessibleUsers, onEdit, onArchive, onRestore, isArchived }: RowProps) {
   const [expanded, setExpanded] = useState(false);
 
   const prev      = history[0];
   const change    = prev ? a.currentBalance - prev.balance : null;
   const isGain    = change !== null && change >= 0;
+  const ownership = ownershipSummary(a.ownerUserIds, accessibleUsers);
 
   return (
     <div className="rounded-xl border overflow-hidden" style={{ background: 'var(--surface)', borderColor: 'var(--border)' }}>
@@ -154,7 +175,7 @@ function AccountRow({ account: a, history, onEdit, onArchive, onRestore, isArchi
             {a.name}
           </p>
           <p className="text-xs mt-0.5" style={{ color: 'var(--muted)' }}>
-            {(a.interestRate * 100).toFixed(2)}% AER
+            {(a.interestRate * 100).toFixed(2)}% AER · {ownership.label}
           </p>
         </div>
 

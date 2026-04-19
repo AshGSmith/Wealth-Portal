@@ -2,12 +2,16 @@
 
 import { useState } from 'react';
 import Sheet from '@/components/ui/Sheet';
+import OwnerSelector from '@/components/ui/OwnerSelector';
+import type { AccessibleUser } from '@/lib/auth/types';
 import type { Saving, Pot, SavingId, PotId, IncomeSource, IncomeSourceId } from '@/lib/types';
 
 interface Props {
   saving: Saving | null;
   pots: Pot[];
   sources: IncomeSource[];
+  ownerOptions: AccessibleUser[];
+  currentUserId: string | null;
   open: boolean;
   onClose: () => void;
   onSave: (saving: Saving) => void;
@@ -21,9 +25,10 @@ interface FormState {
   startDate:  string;
   endDate:    string;
   isCritical: boolean;
+  ownerUserIds: string[];
 }
 
-function blank(pots: Pot[], sources: IncomeSource[]): FormState {
+function blank(pots: Pot[], sources: IncomeSource[], currentUserId: string | null): FormState {
   return {
     name: '',
     amount: '',
@@ -32,17 +37,18 @@ function blank(pots: Pot[], sources: IncomeSource[]): FormState {
     startDate: '',
     endDate: '',
     isCritical: false,
+    ownerUserIds: currentUserId ? [currentUserId] : [],
   };
 }
 function fromSaving(s: Saving): FormState {
-  return { name: s.name, amount: String(s.amount), potId: s.potId, incomeSourceId: s.incomeSourceId, startDate: s.startDate ?? '', endDate: s.endDate ?? '', isCritical: s.isCritical };
+  return { name: s.name, amount: String(s.amount), potId: s.potId, incomeSourceId: s.incomeSourceId, startDate: s.startDate ?? '', endDate: s.endDate ?? '', isCritical: s.isCritical, ownerUserIds: s.ownerUserIds };
 }
 
 const inputCls = 'w-full rounded-lg border px-3 py-2.5 text-sm outline-none transition-colors';
 const inputStyle = { background: 'var(--surface-hover)', borderColor: 'var(--border)', color: 'var(--foreground)', colorScheme: 'dark' as const };
 
-export default function SavingForm({ saving, pots, sources, open, onClose, onSave }: Props) {
-  const [form, setForm]     = useState<FormState>(() => saving ? fromSaving(saving) : blank(pots, sources));
+export default function SavingForm({ saving, pots, sources, ownerOptions, currentUserId, open, onClose, onSave }: Props) {
+  const [form, setForm]     = useState<FormState>(() => saving ? fromSaving(saving) : blank(pots, sources, currentUserId));
   const [errors, setErrors] = useState<Partial<Record<keyof FormState, string>>>({});
 
   function set<K extends keyof FormState>(key: K, value: FormState[K]) {
@@ -57,6 +63,7 @@ export default function SavingForm({ saving, pots, sources, open, onClose, onSav
     else if (Number(form.amount) <= 0) errs.amount = 'Must be > 0';
     if (!form.potId)                  errs.potId  = 'Required';
     if (!form.incomeSourceId)         errs.incomeSourceId = 'Required';
+    if (form.ownerUserIds.length === 0) errs.ownerUserIds = 'Required';
     if (form.startDate && form.endDate && form.endDate < form.startDate) errs.endDate = 'Must be after start date';
     setErrors(errs);
     return Object.keys(errs).length === 0;
@@ -70,6 +77,7 @@ export default function SavingForm({ saving, pots, sources, open, onClose, onSav
       amount:     parseFloat(form.amount),
       potId:      form.potId as PotId,
       incomeSourceId: form.incomeSourceId as IncomeSourceId,
+      ownerUserIds: form.ownerUserIds,
       startDate:  form.startDate || null,
       endDate:    form.endDate   || null,
       isCritical: form.isCritical,
@@ -182,6 +190,13 @@ export default function SavingForm({ saving, pots, sources, open, onClose, onSav
             <p className="text-xs mt-0.5" style={{ color: 'var(--muted)' }}>Non-negotiable — always highlighted</p>
           </div>
         </label>
+
+        <OwnerSelector
+          value={form.ownerUserIds}
+          options={ownerOptions}
+          onChange={value => set('ownerUserIds', value)}
+        />
+        {errors.ownerUserIds && <p className="mt-1 text-xs text-rose-500">{errors.ownerUserIds}</p>}
       </div>
     </Sheet>
   );

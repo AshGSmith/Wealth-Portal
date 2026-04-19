@@ -1,24 +1,29 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import Sheet from '@/components/ui/Sheet';
+import OwnerSelector from '@/components/ui/OwnerSelector';
+import type { AccessibleUser } from '@/lib/auth/types';
 import type { Pension, PensionId } from '@/lib/types';
 
 interface Props {
-  pension: Pension | null;
-  open:    boolean;
-  onClose: () => void;
-  onSave:  (p: Pension) => void;
+  pension:        Pension | null;
+  open:           boolean;
+  onClose:        () => void;
+  onSave:         (p: Pension) => void;
+  ownerOptions:   AccessibleUser[];
+  currentUserId:  string | null;
 }
 
 interface FormState {
   name:           string;
   provider:       string;
   currentBalance: string;
+  ownerUserIds:   string[];
 }
 
-function blank(): FormState {
-  return { name: '', provider: '', currentBalance: '' };
+function blank(currentUserId: string | null): FormState {
+  return { name: '', provider: '', currentBalance: '', ownerUserIds: currentUserId ? [currentUserId] : [] };
 }
 
 function fromPension(p: Pension): FormState {
@@ -26,6 +31,7 @@ function fromPension(p: Pension): FormState {
     name:           p.name,
     provider:       p.provider,
     currentBalance: String(p.currentBalance),
+    ownerUserIds:   p.ownerUserIds,
   };
 }
 
@@ -35,15 +41,11 @@ const inputStyle = {
   color: 'var(--foreground)', colorScheme: 'dark' as const,
 };
 
-export default function PensionForm({ pension, open, onClose, onSave }: Props) {
-  const [form,   setForm]   = useState<FormState>(() => pension ? fromPension(pension) : blank());
+export default function PensionForm({ pension, open, onClose, onSave, ownerOptions, currentUserId }: Props) {
+  const [form,   setForm]   = useState<FormState>(() => pension ? fromPension(pension) : blank(currentUserId));
   const [errors, setErrors] = useState<Partial<Record<keyof FormState, string>>>({});
 
-  useEffect(() => {
-    if (open) { setForm(pension ? fromPension(pension) : blank()); setErrors({}); }
-  }, [open, pension]);
-
-  function set<K extends keyof FormState>(key: K, value: string) {
+  function set<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm(prev => ({ ...prev, [key]: value }));
     setErrors(prev => ({ ...prev, [key]: undefined }));
   }
@@ -52,6 +54,7 @@ export default function PensionForm({ pension, open, onClose, onSave }: Props) {
     const errs: Partial<Record<keyof FormState, string>> = {};
     if (!form.name.trim())                       errs.name           = 'Required';
     if (!form.provider.trim())                   errs.provider       = 'Required';
+    if (form.ownerUserIds.length === 0)          errs.ownerUserIds   = 'Required';
     if (!form.currentBalance.trim())             errs.currentBalance = 'Required';
     else if (Number(form.currentBalance) < 0)    errs.currentBalance = 'Must be ≥ 0';
     setErrors(errs);
@@ -65,6 +68,7 @@ export default function PensionForm({ pension, open, onClose, onSave }: Props) {
       name:           form.name.trim(),
       provider:       form.provider.trim(),
       currentBalance: parseFloat(form.currentBalance),
+      ownerUserIds:   form.ownerUserIds,
       archived:       pension?.archived ?? false,
     });
     onClose();
@@ -119,6 +123,18 @@ export default function PensionForm({ pension, open, onClose, onSave }: Props) {
             className={inputCls}
             style={{ ...inputStyle, borderColor: errors.provider ? '#f43f5e' : 'var(--border)' }} />
           {errors.provider && <p className="mt-1 text-xs text-rose-500">{errors.provider}</p>}
+        </div>
+
+        <div>
+          <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--muted)' }}>
+            Owners <span className="text-rose-500">*</span>
+          </label>
+          <OwnerSelector
+            options={ownerOptions}
+            value={form.ownerUserIds}
+            onChange={value => set('ownerUserIds', value)}
+          />
+          {errors.ownerUserIds && <p className="mt-1 text-xs text-rose-500">{errors.ownerUserIds}</p>}
         </div>
 
         {/* Current balance */}

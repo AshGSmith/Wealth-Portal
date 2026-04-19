@@ -1,6 +1,6 @@
 import {
   LayoutDashboard, Wallet, TrendingUp,
-  Receipt, PiggyBank, Banknote, Layers, FileBarChart,
+  Receipt, PiggyBank, Banknote, Layers, FileBarChart, Users,
 } from 'lucide-react';
 
 export const PRIMARY_NAV = [
@@ -9,7 +9,7 @@ export const PRIMARY_NAV = [
   { href: '/wealth',    label: 'Wealth',    icon: TrendingUp },
 ] as const;
 
-export const SECONDARY_NAV = [
+const BASE_SECONDARY_NAV = [
   { href: '/income',   label: 'Income',   icon: Banknote },
   { href: '/pots',     label: 'Pots',     icon: Layers },
   { href: '/expenses', label: 'Expenses', icon: Receipt },
@@ -17,5 +17,12 @@ export const SECONDARY_NAV = [
   { href: '/reports',  label: 'Reports',  icon: FileBarChart },
 ] as const;
 
-// All nav items combined — used where the full list is needed
-export const NAV_ITEMS = [...PRIMARY_NAV, ...SECONDARY_NAV] as const;
+const ADMIN_SECONDARY_NAV = [
+  { href: '/users', label: 'Users', icon: Users },
+] as const;
+
+export function getSecondaryNav(isAdmin: boolean) {
+  return isAdmin ? [...BASE_SECONDARY_NAV, ...ADMIN_SECONDARY_NAV] : [...BASE_SECONDARY_NAV];
+}
+
+export const SECONDARY_NAV = BASE_SECONDARY_NAV;

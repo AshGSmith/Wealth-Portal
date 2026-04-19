@@ -8,6 +8,7 @@ import MortgageForm from '@/components/wealth/MortgageForm';
 import MortgagePaymentSheet from '@/components/wealth/MortgagePaymentSheet';
 import { useStore } from '@/lib/store';
 import type { Mortgage } from '@/lib/types';
+import type { AccessibleUser } from '@/lib/auth/types';
 import { mortgageBalance, mortgageFixedTermInterest, mortgageLiability } from '@/lib/wealthCalc';
 import { fmtCurrency } from '@/lib/format';
 
@@ -59,6 +60,7 @@ export default function MortgagesPage() {
             <MortgageRow
               key={m.id}
               mortgage={m}
+              accessibleUsers={store.accessibleUsers}
               outstanding={mortgageBalance(m, store.mortgagePayments)}
               fixedInterest={mortgageFixedTermInterest(m, store.mortgagePayments)}
               totalLiability={mortgageLiability(m, store.mortgagePayments)}
@@ -87,6 +89,7 @@ export default function MortgagesPage() {
                 <MortgageRow
                   key={m.id}
                   mortgage={m}
+                  accessibleUsers={store.accessibleUsers}
                   outstanding={mortgageBalance(m, store.mortgagePayments)}
                   fixedInterest={mortgageFixedTermInterest(m, store.mortgagePayments)}
                   totalLiability={mortgageLiability(m, store.mortgagePayments)}
@@ -103,7 +106,10 @@ export default function MortgagesPage() {
       )}
 
       <MortgageForm
+        key={`${editing?.id ?? 'new'}-${showForm ? 'open' : 'closed'}`}
         mortgage={editing}
+        ownerOptions={store.accessibleUsers}
+        currentUserId={store.currentUserId}
         open={showForm}
         onClose={() => setShowForm(false)}
         onSave={m => store.upsertMortgage(m)}
@@ -125,6 +131,7 @@ export default function MortgagesPage() {
 
 interface RowProps {
   mortgage:      Mortgage;
+  accessibleUsers: AccessibleUser[];
   outstanding:   number;
   fixedInterest: number;
   totalLiability: number;
@@ -136,8 +143,22 @@ interface RowProps {
   isArchived?:   boolean;
 }
 
-function MortgageRow({ mortgage: m, outstanding, fixedInterest, totalLiability, paymentCount, onEdit, onPayments, onArchive, onRestore, isArchived }: RowProps) {
+function ownershipSummary(ownerUserIds: string[], accessibleUsers: AccessibleUser[]) {
+  if (ownerUserIds.length > 1) {
+    const names = accessibleUsers
+      .filter(user => ownerUserIds.includes(user.id))
+      .map(user => user.name)
+      .join(', ');
+    return { label: 'Joint', detail: names || `${ownerUserIds.length} users` };
+  }
+
+  const owner = accessibleUsers.find(user => ownerUserIds.includes(user.id));
+  return { label: 'Personal', detail: owner?.name ?? 'Assigned to one user' };
+}
+
+function MortgageRow({ mortgage: m, accessibleUsers, outstanding, fixedInterest, totalLiability, paymentCount, onEdit, onPayments, onArchive, onRestore, isArchived }: RowProps) {
   const paidOff = ((m.amountBorrowed - outstanding) / m.amountBorrowed) * 100;
+  const ownership = ownershipSummary(m.ownerUserIds, accessibleUsers);
 
   return (
     <div id={m.id as string} className="rounded-xl border p-4 scroll-mt-24" style={{ background: 'var(--surface)', borderColor: 'var(--border)' }}>
@@ -153,7 +174,7 @@ function MortgageRow({ mortgage: m, outstanding, fixedInterest, totalLiability, 
               {m.lender}
             </p>
             <p className="text-xs mt-0.5" style={{ color: 'var(--muted)' }}>
-              {(m.interestRate * 100).toFixed(2)}% · {m.termMonths} months ({(m.termMonths / 12).toFixed(0)} yrs)
+              {(m.interestRate * 100).toFixed(2)}% · {m.termMonths} months ({(m.termMonths / 12).toFixed(0)} yrs) · {ownership.label}
             </p>
           </div>
         </div>

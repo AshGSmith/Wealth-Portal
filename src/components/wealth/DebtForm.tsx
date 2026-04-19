@@ -1,15 +1,19 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import Sheet from '@/components/ui/Sheet';
+import OwnerSelector from '@/components/ui/OwnerSelector';
+import type { AccessibleUser } from '@/lib/auth/types';
 import type { Debt, DebtId, DebtType } from '@/lib/types';
 import { fmtCurrency } from '@/lib/format';
 
 interface Props {
-  debt:    Debt | null;
-  open:    boolean;
-  onClose: () => void;
-  onSave:  (d: Debt) => void;
+  debt:           Debt | null;
+  open:           boolean;
+  onClose:        () => void;
+  onSave:         (d: Debt) => void;
+  ownerOptions:   AccessibleUser[];
+  currentUserId:  string | null;
 }
 
 interface FormState {
@@ -21,9 +25,10 @@ interface FormState {
   interestRate:   string;
   termMonths:     string;
   startDate:      string;
+  ownerUserIds:   string[];
 }
 
-function blank(): FormState {
+function blank(currentUserId: string | null): FormState {
   return {
     type: 'loan',
     name: '',
@@ -33,6 +38,7 @@ function blank(): FormState {
     interestRate: '',
     termMonths: '',
     startDate: '',
+    ownerUserIds: currentUserId ? [currentUserId] : [],
   };
 }
 
@@ -46,6 +52,7 @@ function fromDebt(d: Debt): FormState {
     interestRate: d.interestRate === 0 ? '' : String(d.interestRate * 100),
     termMonths: d.termMonths === null ? '' : String(d.termMonths),
     startDate: d.startDate ?? '',
+    ownerUserIds: d.ownerUserIds,
   };
 }
 
@@ -63,13 +70,9 @@ const inputStyle = {
   colorScheme: 'dark' as const,
 };
 
-export default function DebtForm({ debt, open, onClose, onSave }: Props) {
-  const [form, setForm] = useState<FormState>(() => debt ? fromDebt(debt) : blank());
+export default function DebtForm({ debt, open, onClose, onSave, ownerOptions, currentUserId }: Props) {
+  const [form, setForm] = useState<FormState>(() => debt ? fromDebt(debt) : blank(currentUserId));
   const [errors, setErrors] = useState<Partial<Record<keyof FormState, string>>>({});
-
-  useEffect(() => {
-    if (open) { setForm(debt ? fromDebt(debt) : blank()); setErrors({}); }
-  }, [open, debt]);
 
   function set<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm(prev => ({ ...prev, [key]: value }));
@@ -83,6 +86,7 @@ export default function DebtForm({ debt, open, onClose, onSave }: Props) {
 
     if (!form.name.trim()) errs.name = 'Required';
     if (!form.provider.trim()) errs.provider = 'Required';
+    if (form.ownerUserIds.length === 0) errs.ownerUserIds = 'Required';
 
     if (!form.currentBalance.trim()) errs.currentBalance = 'Required';
     else if (Number(form.currentBalance) < 0) errs.currentBalance = 'Must be ≥ 0';
@@ -121,6 +125,7 @@ export default function DebtForm({ debt, open, onClose, onSave }: Props) {
       interestRate: form.interestRate.trim() ? parseFloat(form.interestRate) / 100 : 0,
       termMonths: isCreditCard ? null : parseInt(form.termMonths, 10),
       startDate: isCreditCard ? null : form.startDate,
+      ownerUserIds: form.ownerUserIds,
       archived: debt?.archived ?? false,
     });
     onClose();
@@ -205,6 +210,18 @@ export default function DebtForm({ debt, open, onClose, onSave }: Props) {
             style={{ ...inputStyle, borderColor: errors.provider ? '#f43f5e' : 'var(--border)' }}
           />
           {errors.provider && <p className="mt-1 text-xs text-rose-500">{errors.provider}</p>}
+        </div>
+
+        <div>
+          <label className="mb-1.5 block text-xs font-medium" style={{ color: 'var(--muted)' }}>
+            Owners <span className="text-rose-500">*</span>
+          </label>
+          <OwnerSelector
+            options={ownerOptions}
+            value={form.ownerUserIds}
+            onChange={value => set('ownerUserIds', value)}
+          />
+          {errors.ownerUserIds && <p className="mt-1 text-xs text-rose-500">{errors.ownerUserIds}</p>}
         </div>
 
         <div className={`grid gap-3 ${isCreditCard ? 'grid-cols-1' : 'grid-cols-2'}`}>

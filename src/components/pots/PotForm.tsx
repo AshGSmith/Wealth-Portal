@@ -2,25 +2,29 @@
 
 import { useState } from 'react';
 import Sheet from '@/components/ui/Sheet';
+import OwnerSelector from '@/components/ui/OwnerSelector';
+import type { AccessibleUser } from '@/lib/auth/types';
 import type { Pot, PotId } from '@/lib/types';
 
 interface Props {
   pot: Pot | null;
+  ownerOptions: AccessibleUser[];
+  currentUserId: string | null;
   open: boolean;
   onClose: () => void;
   onSave: (pot: Pot) => void;
 }
 
-interface FormState { name: string; isBusiness: boolean; }
+interface FormState { name: string; isBusiness: boolean; ownerUserIds: string[]; }
 
-function blank(): FormState { return { name: '', isBusiness: false }; }
-function fromPot(p: Pot): FormState { return { name: p.name, isBusiness: p.isBusiness ?? false }; }
+function blank(currentUserId: string | null): FormState { return { name: '', isBusiness: false, ownerUserIds: currentUserId ? [currentUserId] : [] }; }
+function fromPot(p: Pot): FormState { return { name: p.name, isBusiness: p.isBusiness ?? false, ownerUserIds: p.ownerUserIds }; }
 
 const inputCls = 'w-full rounded-lg border px-3 py-2.5 text-sm outline-none transition-colors';
 const inputStyle = { background: 'var(--surface-hover)', borderColor: 'var(--border)', color: 'var(--foreground)', colorScheme: 'dark' as const };
 
-export default function PotForm({ pot, open, onClose, onSave }: Props) {
-  const [form, setForm]     = useState<FormState>(() => pot ? fromPot(pot) : blank());
+export default function PotForm({ pot, ownerOptions, currentUserId, open, onClose, onSave }: Props) {
+  const [form, setForm]     = useState<FormState>(() => pot ? fromPot(pot) : blank(currentUserId));
   const [errors, setErrors] = useState<Partial<Record<keyof FormState, string>>>({});
 
   function set<K extends keyof FormState>(key: K, value: FormState[K]) {
@@ -31,6 +35,7 @@ export default function PotForm({ pot, open, onClose, onSave }: Props) {
   function validate(): boolean {
     const errs: typeof errors = {};
     if (!form.name.trim()) errs.name = 'Required';
+    if (form.ownerUserIds.length === 0) errs.ownerUserIds = 'Select at least one owner';
     setErrors(errs);
     return Object.keys(errs).length === 0;
   }
@@ -41,6 +46,7 @@ export default function PotForm({ pot, open, onClose, onSave }: Props) {
       id:         pot?.id ?? (`p-${Date.now()}` as unknown as PotId),
       name:       form.name.trim(),
       isBusiness: form.isBusiness,
+      ownerUserIds: form.ownerUserIds,
       archived:   pot?.archived ?? false,
     });
     onClose();
@@ -87,6 +93,13 @@ export default function PotForm({ pot, open, onClose, onSave }: Props) {
           />
           <span className="text-sm" style={{ color: 'var(--foreground)' }}>Business Pot</span>
         </label>
+
+        <OwnerSelector
+          value={form.ownerUserIds}
+          options={ownerOptions}
+          onChange={value => set('ownerUserIds', value)}
+        />
+        {errors.ownerUserIds && <p className="mt-1 text-xs text-rose-500">{errors.ownerUserIds}</p>}
       </div>
     </Sheet>
   );

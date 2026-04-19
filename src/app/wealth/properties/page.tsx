@@ -7,6 +7,7 @@ import Tile from '@/components/ui/Tile';
 import PropertyForm from '@/components/wealth/PropertyForm';
 import { useStore } from '@/lib/store';
 import type { Property } from '@/lib/types';
+import type { AccessibleUser } from '@/lib/auth/types';
 import { fmtCurrency } from '@/lib/format';
 
 export default function PropertiesPage() {
@@ -58,6 +59,7 @@ export default function PropertiesPage() {
               key={p.id}
               property={p}
               mortgageName={mortgageName(p.mortgageId)}
+              accessibleUsers={store.accessibleUsers}
               onEdit={() => openEdit(p)}
               onArchive={() => store.setPropertyArchived(p.id, true)}
             />
@@ -83,6 +85,7 @@ export default function PropertiesPage() {
                   key={p.id}
                   property={p}
                   mortgageName={mortgageName(p.mortgageId)}
+                  accessibleUsers={store.accessibleUsers}
                   onEdit={() => openEdit(p)}
                   onRestore={() => store.setPropertyArchived(p.id, false)}
                   isArchived
@@ -94,8 +97,11 @@ export default function PropertiesPage() {
       )}
 
       <PropertyForm
+        key={`${editing?.id ?? 'new'}-${showForm ? 'open' : 'closed'}`}
         property={editing}
         mortgages={store.mortgages}
+        ownerOptions={store.accessibleUsers}
+        currentUserId={store.currentUserId}
         open={showForm}
         onClose={() => setShowForm(false)}
         onSave={p => store.upsertProperty(p)}
@@ -109,18 +115,34 @@ export default function PropertiesPage() {
 interface RowProps {
   property:     Property;
   mortgageName: string | null;
+  accessibleUsers: AccessibleUser[];
   onEdit:       () => void;
   onArchive?:   () => void;
   onRestore?:   () => void;
   isArchived?:  boolean;
 }
 
-function PropertyRow({ property: p, mortgageName, onEdit, onArchive, onRestore, isArchived }: RowProps) {
+function ownershipSummary(ownerUserIds: string[], accessibleUsers: AccessibleUser[]) {
+  if (ownerUserIds.length > 1) {
+    const names = accessibleUsers
+      .filter(user => ownerUserIds.includes(user.id))
+      .map(user => user.name)
+      .join(', ');
+    return { label: 'Joint', detail: names || `${ownerUserIds.length} users` };
+  }
+
+  const owner = accessibleUsers.find(user => ownerUserIds.includes(user.id));
+  return { label: 'Personal', detail: owner?.name ?? 'Assigned to one user' };
+}
+
+function PropertyRow({ property: p, mortgageName, accessibleUsers, onEdit, onArchive, onRestore, isArchived }: RowProps) {
   const gain    = p.currentValue - p.purchasePrice;
   const gainPct = ((gain / p.purchasePrice) * 100).toFixed(1);
   const isGain  = gain >= 0;
+  const ownership = ownershipSummary(p.ownerUserIds, accessibleUsers);
 
   const badges = [
+    ownership.label,
     p.isMainResidence && 'Main residence',
     p.isRental        && 'Rental',
   ].filter(Boolean) as string[];
@@ -201,7 +223,12 @@ function PropertyRow({ property: p, mortgageName, onEdit, onArchive, onRestore, 
           {badges.map(b => (
             <span key={b}
               className="rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
-              style={{ background: 'var(--primary-light)', color: 'var(--primary)' }}>
+              style={{
+                background: b === ownership.label ? 'var(--surface-hover)' : 'var(--primary-light)',
+                color: b === ownership.label ? 'var(--muted)' : 'var(--primary)',
+              }}
+              title={b === ownership.label ? ownership.detail : undefined}
+            >
               {b}
             </span>
           ))}

@@ -1,11 +1,15 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import Sheet from '@/components/ui/Sheet';
+import OwnerSelector from '@/components/ui/OwnerSelector';
+import type { AccessibleUser } from '@/lib/auth/types';
 import type { Mortgage, MortgageId } from '@/lib/types';
 
 interface Props {
   mortgage: Mortgage | null;
+  ownerOptions: AccessibleUser[];
+  currentUserId: string | null;
   open:     boolean;
   onClose:  () => void;
   onSave:   (m: Mortgage) => void;
@@ -18,10 +22,11 @@ interface FormState {
   termMonths:      string;
   startDate:       string;
   fixedTermMonths: string;
+  ownerUserIds:    string[];
 }
 
 function blank(): FormState {
-  return { lender: '', amountBorrowed: '', interestRate: '', termMonths: '', startDate: '', fixedTermMonths: '' };
+  return { lender: '', amountBorrowed: '', interestRate: '', termMonths: '', startDate: '', fixedTermMonths: '', ownerUserIds: [] };
 }
 
 function fromMortgage(m: Mortgage): FormState {
@@ -32,6 +37,7 @@ function fromMortgage(m: Mortgage): FormState {
     termMonths:      String(m.termMonths),
     startDate:       m.startDate ?? '',
     fixedTermMonths: m.fixedTermMonths ? String(m.fixedTermMonths) : '',
+    ownerUserIds:    m.ownerUserIds,
   };
 }
 
@@ -41,15 +47,11 @@ const inputStyle = {
   color: 'var(--foreground)', colorScheme: 'dark' as const,
 };
 
-export default function MortgageForm({ mortgage, open, onClose, onSave }: Props) {
-  const [form,   setForm]   = useState<FormState>(() => mortgage ? fromMortgage(mortgage) : blank());
+export default function MortgageForm({ mortgage, ownerOptions, currentUserId, open, onClose, onSave }: Props) {
+  const [form,   setForm]   = useState<FormState>(() => mortgage ? fromMortgage(mortgage) : { ...blank(), ownerUserIds: currentUserId ? [currentUserId] : [] });
   const [errors, setErrors] = useState<Partial<Record<keyof FormState, string>>>({});
 
-  useEffect(() => {
-    if (open) { setForm(mortgage ? fromMortgage(mortgage) : blank()); setErrors({}); }
-  }, [open, mortgage]);
-
-  function set<K extends keyof FormState>(key: K, value: string) {
+  function set<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm(prev => ({ ...prev, [key]: value }));
     setErrors(prev => ({ ...prev, [key]: undefined }));
   }
@@ -64,6 +66,7 @@ export default function MortgageForm({ mortgage, open, onClose, onSave }: Props)
     if (!form.termMonths.trim())                       errs.termMonths     = 'Required';
     else if (!Number.isInteger(Number(form.termMonths)) || Number(form.termMonths) <= 0)
                                                        errs.termMonths     = 'Must be a whole number > 0';
+    if (form.ownerUserIds.length === 0)                errs.ownerUserIds   = 'Required';
     setErrors(errs);
     return Object.keys(errs).length === 0;
   }
@@ -78,6 +81,7 @@ export default function MortgageForm({ mortgage, open, onClose, onSave }: Props)
       termMonths:      parseInt(form.termMonths, 10),
       startDate:       form.startDate || null,
       fixedTermMonths: form.fixedTermMonths.trim() ? parseInt(form.fixedTermMonths, 10) : null,
+      ownerUserIds:    form.ownerUserIds,
       archived:        mortgage?.archived ?? false,
     });
     onClose();
@@ -197,6 +201,13 @@ export default function MortgageForm({ mortgage, open, onClose, onSave }: Props)
             {errors.termMonths && <p className="mt-1 text-xs text-rose-500">{errors.termMonths}</p>}
           </div>
         </div>
+
+        <OwnerSelector
+          value={form.ownerUserIds}
+          options={ownerOptions}
+          onChange={value => set('ownerUserIds', value)}
+        />
+        {errors.ownerUserIds && <p className="mt-1 text-xs text-rose-500">{errors.ownerUserIds}</p>}
 
       </div>
     </Sheet>

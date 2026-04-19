@@ -1,13 +1,17 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import Sheet from '@/components/ui/Sheet';
+import OwnerSelector from '@/components/ui/OwnerSelector';
+import type { AccessibleUser } from '@/lib/auth/types';
 import type { Property, Mortgage, PropertyId, MortgageId } from '@/lib/types';
 import { fmtCurrency } from '@/lib/format';
 
 interface Props {
   property:  Property | null;
   mortgages: Mortgage[];
+  ownerOptions: AccessibleUser[];
+  currentUserId: string | null;
   open:      boolean;
   onClose:   () => void;
   onSave:    (p: Property) => void;
@@ -22,12 +26,14 @@ interface FormState {
   mortgageId:      string;
   isMainResidence: boolean;
   isRental:        boolean;
+  ownerUserIds:    string[];
 }
 
-function blank(): FormState {
+function blank(currentUserId: string | null): FormState {
   return {
     name: '', address: '', purchaseDate: '', purchasePrice: '',
     currentValue: '', mortgageId: '', isMainResidence: false, isRental: false,
+    ownerUserIds: currentUserId ? [currentUserId] : [],
   };
 }
 
@@ -41,6 +47,7 @@ function fromProperty(p: Property): FormState {
     mortgageId:      p.mortgageId ?? '',
     isMainResidence: p.isMainResidence,
     isRental:        p.isRental,
+    ownerUserIds:    p.ownerUserIds,
   };
 }
 
@@ -50,13 +57,9 @@ const inputStyle = {
   color: 'var(--foreground)', colorScheme: 'dark' as const,
 };
 
-export default function PropertyForm({ property, mortgages, open, onClose, onSave }: Props) {
-  const [form,   setForm]   = useState<FormState>(() => property ? fromProperty(property) : blank());
+export default function PropertyForm({ property, mortgages, ownerOptions, currentUserId, open, onClose, onSave }: Props) {
+  const [form,   setForm]   = useState<FormState>(() => property ? fromProperty(property) : blank(currentUserId));
   const [errors, setErrors] = useState<Partial<Record<keyof FormState, string>>>({});
-
-  useEffect(() => {
-    if (open) { setForm(property ? fromProperty(property) : blank()); setErrors({}); }
-  }, [open, property]);
 
   function set<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm(prev => ({ ...prev, [key]: value }));
@@ -82,6 +85,7 @@ export default function PropertyForm({ property, mortgages, open, onClose, onSav
     else if (Number(form.purchasePrice) <= 0)      errs.purchasePrice = 'Must be > 0';
     if (!form.currentValue.trim())                 errs.currentValue  = 'Required';
     else if (Number(form.currentValue) <= 0)       errs.currentValue  = 'Must be > 0';
+    if (form.ownerUserIds.length === 0)            errs.ownerUserIds  = 'Required';
     setErrors(errs);
     return Object.keys(errs).length === 0;
   }
@@ -98,6 +102,7 @@ export default function PropertyForm({ property, mortgages, open, onClose, onSav
       mortgageId:      form.mortgageId ? (form.mortgageId as unknown as MortgageId) : null,
       isMainResidence: form.isMainResidence,
       isRental:        form.isRental,
+      ownerUserIds:    form.ownerUserIds,
       archived:        property?.archived ?? false,
     });
     onClose();
@@ -247,6 +252,13 @@ export default function PropertyForm({ property, mortgages, open, onClose, onSav
             </div>
           </label>
         </div>
+
+        <OwnerSelector
+          value={form.ownerUserIds}
+          options={ownerOptions}
+          onChange={value => set('ownerUserIds', value)}
+        />
+        {errors.ownerUserIds && <p className="mt-1 text-xs text-rose-500">{errors.ownerUserIds}</p>}
 
       </div>
     </Sheet>

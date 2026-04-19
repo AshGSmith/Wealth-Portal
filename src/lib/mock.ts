@@ -27,8 +27,8 @@ export const MOCK_BUDGET: Budget = {
 // ─── Income sources ───────────────────────────────────────────────────────────
 
 export const MOCK_INCOME_SOURCES: IncomeSource[] = [
-  { id: id<IncomeSourceId>('is1'), type: 'salary',    provider: 'Civica',        startingAnnualSalary: 48000, archived: false },
-  { id: id<IncomeSourceId>('is2'), type: 'business', provider: 'Design Studio', startingAnnualSalary: null,  archived: false },
+  { id: id<IncomeSourceId>('is1'), type: 'salary',    provider: 'Civica',        startingAnnualSalary: 48000, ownerUserIds: [], archived: false },
+  { id: id<IncomeSourceId>('is2'), type: 'business', provider: 'Design Studio', startingAnnualSalary: null,  ownerUserIds: [], archived: false },
 ];
 
 export const MOCK_SALARY_HISTORY: SalaryHistory[] = [
@@ -65,39 +65,39 @@ export const MOCK_INCOME_ENTRIES: IncomeEntry[] = [
 // ─── Pots ─────────────────────────────────────────────────────────────────────
 
 export const MOCK_POTS: Pot[] = [
-  { id: id<PotId>('p1'), name: 'Household',      isBusiness: false, archived: false },
-  { id: id<PotId>('p2'), name: 'Personal',       isBusiness: false, archived: false },
-  { id: id<PotId>('p3'), name: 'Goals & Savings', isBusiness: false, archived: false },
-  { id: id<PotId>('p4'), name: 'Freelance',      isBusiness: true,  archived: false },
+  { id: id<PotId>('p1'), name: 'Household',       isBusiness: false, ownerUserIds: [], archived: false },
+  { id: id<PotId>('p2'), name: 'Personal',        isBusiness: false, ownerUserIds: [], archived: false },
+  { id: id<PotId>('p3'), name: 'Goals & Savings', isBusiness: false, ownerUserIds: [], archived: false },
+  { id: id<PotId>('p4'), name: 'Freelance',       isBusiness: true,  ownerUserIds: [], archived: false },
 ];
 
 // ─── Expenses ─────────────────────────────────────────────────────────────────
 
 export const MOCK_EXPENSES: Expense[] = [
   // Household (p1)
-  { id: id<ExpenseId>('e1'), potId: id<PotId>('p1'), incomeSourceId: id<IncomeSourceId>('is1'), name: 'Rent',             amount: 1200, isCritical: true,  startDate: null, endDate: null, archived: false, oneOffPayment: false, oneOffAppliedBudgetMonth: null },
-  { id: id<ExpenseId>('e2'), potId: id<PotId>('p1'), incomeSourceId: id<IncomeSourceId>('is1'), name: 'Electricity & Gas', amount: 95,  isCritical: true,  startDate: null, endDate: null, archived: false, oneOffPayment: false, oneOffAppliedBudgetMonth: null },
-  { id: id<ExpenseId>('e3'), potId: id<PotId>('p1'), incomeSourceId: id<IncomeSourceId>('is1'), name: 'Groceries',        amount: 380, isCritical: false, startDate: null, endDate: null, archived: false, oneOffPayment: false, oneOffAppliedBudgetMonth: null },
-  { id: id<ExpenseId>('e4'), potId: id<PotId>('p1'), incomeSourceId: id<IncomeSourceId>('is1'), name: 'Broadband',        amount: 30,  isCritical: true,  startDate: null, endDate: null, archived: false, oneOffPayment: false, oneOffAppliedBudgetMonth: null },
+  { id: id<ExpenseId>('e1'), potId: id<PotId>('p1'), incomeSourceId: id<IncomeSourceId>('is1'), ownerUserIds: [], name: 'Rent',             amount: 1200, isCritical: true,  startDate: null, endDate: null, archived: false, oneOffPayment: false, oneOffAppliedBudgetMonth: null },
+  { id: id<ExpenseId>('e2'), potId: id<PotId>('p1'), incomeSourceId: id<IncomeSourceId>('is1'), ownerUserIds: [], name: 'Electricity & Gas', amount: 95,  isCritical: true,  startDate: null, endDate: null, archived: false, oneOffPayment: false, oneOffAppliedBudgetMonth: null },
+  { id: id<ExpenseId>('e3'), potId: id<PotId>('p1'), incomeSourceId: id<IncomeSourceId>('is1'), ownerUserIds: [], name: 'Groceries',        amount: 380, isCritical: false, startDate: null, endDate: null, archived: false, oneOffPayment: false, oneOffAppliedBudgetMonth: null },
+  { id: id<ExpenseId>('e4'), potId: id<PotId>('p1'), incomeSourceId: id<IncomeSourceId>('is1'), ownerUserIds: [], name: 'Broadband',        amount: 30,  isCritical: true,  startDate: null, endDate: null, archived: false, oneOffPayment: false, oneOffAppliedBudgetMonth: null },
   // Personal (p2)
-  { id: id<ExpenseId>('e5'), potId: id<PotId>('p2'), incomeSourceId: id<IncomeSourceId>('is1'), name: 'Transport',       amount: 165, isCritical: false, startDate: null, endDate: null, archived: false, oneOffPayment: false, oneOffAppliedBudgetMonth: null },
-  { id: id<ExpenseId>('e6'), potId: id<PotId>('p2'), incomeSourceId: id<IncomeSourceId>('is1'), name: 'Gym membership',   amount: 45,  isCritical: false, startDate: null, endDate: null, archived: false, oneOffPayment: false, oneOffAppliedBudgetMonth: null },
-  { id: id<ExpenseId>('e7'), potId: id<PotId>('p2'), incomeSourceId: id<IncomeSourceId>('is1'), name: 'Clothing',        amount: 60,  isCritical: false, startDate: null, endDate: null, archived: false, oneOffPayment: false, oneOffAppliedBudgetMonth: null },
-  { id: id<ExpenseId>('e8'), potId: id<PotId>('p2'), incomeSourceId: id<IncomeSourceId>('is1'), name: 'Eating out',      amount: 120, isCritical: false, startDate: null, endDate: null, archived: false, oneOffPayment: false, oneOffAppliedBudgetMonth: null },
+  { id: id<ExpenseId>('e5'), potId: id<PotId>('p2'), incomeSourceId: id<IncomeSourceId>('is1'), ownerUserIds: [], name: 'Transport',       amount: 165, isCritical: false, startDate: null, endDate: null, archived: false, oneOffPayment: false, oneOffAppliedBudgetMonth: null },
+  { id: id<ExpenseId>('e6'), potId: id<PotId>('p2'), incomeSourceId: id<IncomeSourceId>('is1'), ownerUserIds: [], name: 'Gym membership',   amount: 45,  isCritical: false, startDate: null, endDate: null, archived: false, oneOffPayment: false, oneOffAppliedBudgetMonth: null },
+  { id: id<ExpenseId>('e7'), potId: id<PotId>('p2'), incomeSourceId: id<IncomeSourceId>('is1'), ownerUserIds: [], name: 'Clothing',        amount: 60,  isCritical: false, startDate: null, endDate: null, archived: false, oneOffPayment: false, oneOffAppliedBudgetMonth: null },
+  { id: id<ExpenseId>('e8'), potId: id<PotId>('p2'), incomeSourceId: id<IncomeSourceId>('is1'), ownerUserIds: [], name: 'Eating out',      amount: 120, isCritical: false, startDate: null, endDate: null, archived: false, oneOffPayment: false, oneOffAppliedBudgetMonth: null },
   // Freelance (p4)
-  { id: id<ExpenseId>('e9'),  potId: id<PotId>('p4'), incomeSourceId: id<IncomeSourceId>('is2'), name: 'Adobe CC',      amount: 55, isCritical: true,  startDate: null, endDate: null, archived: false, oneOffPayment: false, oneOffAppliedBudgetMonth: null },
-  { id: id<ExpenseId>('e10'), potId: id<PotId>('p4'), incomeSourceId: id<IncomeSourceId>('is2'), name: 'Cloud hosting', amount: 28, isCritical: false, startDate: null, endDate: null, archived: false, oneOffPayment: false, oneOffAppliedBudgetMonth: null },
+  { id: id<ExpenseId>('e9'),  potId: id<PotId>('p4'), incomeSourceId: id<IncomeSourceId>('is2'), ownerUserIds: [], name: 'Adobe CC',      amount: 55, isCritical: true,  startDate: null, endDate: null, archived: false, oneOffPayment: false, oneOffAppliedBudgetMonth: null },
+  { id: id<ExpenseId>('e10'), potId: id<PotId>('p4'), incomeSourceId: id<IncomeSourceId>('is2'), ownerUserIds: [], name: 'Cloud hosting', amount: 28, isCritical: false, startDate: null, endDate: null, archived: false, oneOffPayment: false, oneOffAppliedBudgetMonth: null },
 ];
 
 // ─── Savings ──────────────────────────────────────────────────────────────────
 
 export const MOCK_SAVINGS: Saving[] = [
   // Goals (p3)
-  { id: id<SavingId>('s1'), potId: id<PotId>('p3'), incomeSourceId: id<IncomeSourceId>('is1'), name: 'Emergency fund', amount: 300, isCritical: true,  startDate: null, endDate: null, archived: false },
-  { id: id<SavingId>('s2'), potId: id<PotId>('p3'), incomeSourceId: id<IncomeSourceId>('is1'), name: 'Holiday',        amount: 150, isCritical: false, startDate: null, endDate: null, archived: false },
-  { id: id<SavingId>('s3'), potId: id<PotId>('p3'), incomeSourceId: id<IncomeSourceId>('is1'), name: 'House deposit',  amount: 400, isCritical: true,  startDate: null, endDate: null, archived: false },
+  { id: id<SavingId>('s1'), potId: id<PotId>('p3'), incomeSourceId: id<IncomeSourceId>('is1'), ownerUserIds: [], name: 'Emergency fund', amount: 300, isCritical: true,  startDate: null, endDate: null, archived: false },
+  { id: id<SavingId>('s2'), potId: id<PotId>('p3'), incomeSourceId: id<IncomeSourceId>('is1'), ownerUserIds: [], name: 'Holiday',        amount: 150, isCritical: false, startDate: null, endDate: null, archived: false },
+  { id: id<SavingId>('s3'), potId: id<PotId>('p3'), incomeSourceId: id<IncomeSourceId>('is1'), ownerUserIds: [], name: 'House deposit',  amount: 400, isCritical: true,  startDate: null, endDate: null, archived: false },
   // Freelance (p4)
-  { id: id<SavingId>('s4'), potId: id<PotId>('p4'), incomeSourceId: id<IncomeSourceId>('is2'), name: 'Tax reserve', amount: 220, isCritical: true,  startDate: null, endDate: null, archived: false },
+  { id: id<SavingId>('s4'), potId: id<PotId>('p4'), incomeSourceId: id<IncomeSourceId>('is2'), ownerUserIds: [], name: 'Tax reserve', amount: 220, isCritical: true,  startDate: null, endDate: null, archived: false },
 ];
 
 export const MOCK_BUDGETS: LocalBudget[] = [{
@@ -111,7 +111,7 @@ export const MOCK_BUDGETS: LocalBudget[] = [{
 // ─── Wealth — Mortgages ───────────────────────────────────────────────────────
 
 export const MOCK_MORTGAGES: Mortgage[] = [
-  { id: id<MortgageId>('m1'), lender: 'Nationwide', amountBorrowed: 220000, interestRate: 0.039, termMonths: 300, startDate: '2024-05-01', fixedTermMonths: 24, archived: false },
+  { id: id<MortgageId>('m1'), lender: 'Nationwide', amountBorrowed: 220000, interestRate: 0.039, termMonths: 300, startDate: '2024-05-01', fixedTermMonths: 24, ownerUserIds: [], archived: false },
 ];
 
 export const MOCK_MORTGAGE_PAYMENTS: MortgagePayment[] = [
@@ -133,6 +133,7 @@ export const MOCK_PROPERTIES: Property[] = [
     mortgageId: id<MortgageId>('m1'),
     isMainResidence: true,
     isRental: false,
+    ownerUserIds: [],
     archived: false,
   },
 ];
@@ -140,8 +141,8 @@ export const MOCK_PROPERTIES: Property[] = [
 // ─── Wealth — Savings accounts ────────────────────────────────────────────────
 
 export const MOCK_SAVINGS_ACCOUNTS: SavingsAccount[] = [
-  { id: id<SavingsAccountId>('sa1'), name: 'Marcus Easy Access',  currentBalance: 8500,  interestRate: 0.045, archived: false },
-  { id: id<SavingsAccountId>('sa2'), name: 'HSBC Fixed Rate ISA', currentBalance: 15000, interestRate: 0.048, archived: false },
+  { id: id<SavingsAccountId>('sa1'), name: 'Marcus Easy Access',  currentBalance: 8500,  interestRate: 0.045, ownerUserIds: [], archived: false },
+  { id: id<SavingsAccountId>('sa2'), name: 'HSBC Fixed Rate ISA', currentBalance: 15000, interestRate: 0.048, ownerUserIds: [], archived: false },
 ];
 
 export const MOCK_SAVINGS_HISTORY: SavingsHistory[] = [
@@ -165,6 +166,7 @@ export const MOCK_DEBTS: Debt[] = [
     interestRate: 0.069,
     termMonths: 48,
     startDate: '2023-06-01',
+    ownerUserIds: [],
     archived: false,
   },
   {
@@ -177,6 +179,7 @@ export const MOCK_DEBTS: Debt[] = [
     interestRate: 0.149,
     termMonths: 36,
     startDate: '2024-01-15',
+    ownerUserIds: [],
     archived: false,
   },
 ];
@@ -197,8 +200,8 @@ export const MOCK_DEBT_HISTORY: DebtHistory[] = [
 // ─── Wealth — Pensions ────────────────────────────────────────────────────────
 
 export const MOCK_PENSIONS: Pension[] = [
-  { id: id<PensionId>('pe1'), name: 'Workplace Pension', provider: 'Nest',      currentBalance: 42000, archived: false },
-  { id: id<PensionId>('pe2'), name: 'Private SIPP',      provider: 'Vanguard',  currentBalance: 18500, archived: false },
+  { id: id<PensionId>('pe1'), name: 'Workplace Pension', provider: 'Nest',      currentBalance: 42000, ownerUserIds: [], archived: false },
+  { id: id<PensionId>('pe2'), name: 'Private SIPP',      provider: 'Vanguard',  currentBalance: 18500, ownerUserIds: [], archived: false },
 ];
 
 export const MOCK_PENSION_HISTORY: PensionHistory[] = [

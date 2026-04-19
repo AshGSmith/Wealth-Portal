@@ -4,13 +4,16 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { MoreHorizontal, X } from 'lucide-react';
-import { PRIMARY_NAV, SECONDARY_NAV } from '@/lib/nav';
+import { PRIMARY_NAV, getSecondaryNav } from '@/lib/nav';
 
-export default function BottomNav() {
+export default function BottomNav({ isAdmin }: { isAdmin: boolean }) {
   const pathname = usePathname();
   const [showMore, setShowMore] = useState(false);
+  const secondaryNav = getSecondaryNav(isAdmin);
+  const isAuthRoute = pathname === '/login' || pathname === '/forgot-password' || pathname.startsWith('/reset-password/');
+  if (isAuthRoute) return null;
 
-  const secondaryActive = SECONDARY_NAV.some(item => pathname === item.href);
+  const secondaryActive = secondaryNav.some(item => pathname === item.href);
 
   return (
     <>
@@ -77,7 +80,7 @@ export default function BottomNav() {
 
             {/* Secondary nav items */}
             <div className="px-3 pt-2 grid grid-cols-2 gap-1">
-              {SECONDARY_NAV.map(({ href, label, icon: Icon }) => {
+              {secondaryNav.map(({ href, label, icon: Icon }) => {
                 const active = pathname === href;
                 return (
                   <Link

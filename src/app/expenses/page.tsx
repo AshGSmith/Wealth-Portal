@@ -6,6 +6,7 @@ import PageHeader from '@/components/layout/PageHeader';
 import ExpenseForm from '@/components/expenses/ExpenseForm';
 import { useStore } from '@/lib/store';
 import type { Expense } from '@/lib/types';
+import type { AccessibleUser } from '@/lib/auth/types';
 import { fmtCurrency } from '@/lib/format';
 
 export default function ExpensesPage() {
@@ -79,6 +80,7 @@ export default function ExpensesPage() {
                 expense={expense}
                 potName={potName(expense.potId)}
                 sourceName={sourceName(expense.incomeSourceId)}
+                accessibleUsers={store.accessibleUsers}
                 onEdit={() => openEdit(expense)}
                 onArchive={() => store.setExpenseArchived(expense.id, true)}
               />
@@ -110,6 +112,7 @@ export default function ExpensesPage() {
                     expense={expense}
                     potName={potName(expense.potId)}
                     sourceName={sourceName(expense.incomeSourceId)}
+                    accessibleUsers={store.accessibleUsers}
                     onEdit={() => openEdit(expense)}
                     onRestore={() => store.setExpenseArchived(expense.id, false)}
                     isArchived
@@ -126,6 +129,8 @@ export default function ExpensesPage() {
         expense={editingExpense}
         pots={activePots}
         sources={activeSources}
+        ownerOptions={store.accessibleUsers}
+        currentUserId={store.currentUserId}
         open={showForm}
         onClose={() => setShowForm(false)}
         onSave={expense => store.upsertExpense(expense)}
@@ -140,6 +145,7 @@ interface RowProps {
   expense:    Expense;
   potName:    string;
   sourceName: string;
+  accessibleUsers: AccessibleUser[];
   onEdit:     () => void;
   onArchive?: () => void;
   onRestore?: () => void;
@@ -153,7 +159,22 @@ function dateRange(e: Expense): string {
   return `${s} – ${end}`;
 }
 
-function ExpenseRow({ expense, potName, sourceName, onEdit, onArchive, onRestore, isArchived }: RowProps) {
+function ownershipSummary(ownerUserIds: string[], accessibleUsers: AccessibleUser[]) {
+  if (ownerUserIds.length > 1) {
+    const names = accessibleUsers
+      .filter(user => ownerUserIds.includes(user.id))
+      .map(user => user.name)
+      .join(', ');
+    return { label: 'Joint', detail: names || `${ownerUserIds.length} users` };
+  }
+
+  const owner = accessibleUsers.find(user => ownerUserIds.includes(user.id));
+  return { label: 'Personal', detail: owner?.name ?? 'Assigned to one user' };
+}
+
+function ExpenseRow({ expense, potName, sourceName, accessibleUsers, onEdit, onArchive, onRestore, isArchived }: RowProps) {
+  const ownership = ownershipSummary(expense.ownerUserIds, accessibleUsers);
+
   return (
     <div
       className="flex items-center px-4 py-3 gap-3"
@@ -177,6 +198,13 @@ function ExpenseRow({ expense, potName, sourceName, onEdit, onArchive, onRestore
               Critical
             </span>
           )}
+          <span
+            className="shrink-0 rounded px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide"
+            style={{ background: 'var(--surface-hover)', color: 'var(--muted)' }}
+            title={ownership.detail}
+          >
+            {ownership.label}
+          </span>
           <span
             className="text-sm font-medium truncate"
             style={{ color: isArchived ? 'var(--muted)' : 'var(--foreground)' }}

@@ -4,7 +4,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { ChevronDown, ChevronRight } from 'lucide-react';
-import { PRIMARY_NAV, SECONDARY_NAV } from '@/lib/nav';
+import { PRIMARY_NAV, getSecondaryNav } from '@/lib/nav';
 
 function NavLink({ href, label, icon: Icon }: { href: string; label: string; icon: React.ElementType }) {
   const pathname = usePathname();
@@ -26,10 +26,13 @@ function NavLink({ href, label, icon: Icon }: { href: string; label: string; ico
   );
 }
 
-export default function Sidebar() {
+export default function Sidebar({ isAdmin }: { isAdmin: boolean }) {
   const pathname = usePathname();
-  const secondaryActive = SECONDARY_NAV.some(item => pathname === item.href);
+  const secondaryNav = getSecondaryNav(isAdmin);
+  const isAuthRoute = pathname === '/login' || pathname === '/forgot-password' || pathname.startsWith('/reset-password/');
+  const secondaryActive = secondaryNav.some(item => pathname === item.href);
   const [moreOpen, setMoreOpen] = useState(secondaryActive);
+  if (isAuthRoute) return null;
 
   return (
     <aside
@@ -62,7 +65,7 @@ export default function Sidebar() {
 
           {moreOpen && (
             <div className="mt-1 flex flex-col gap-1 pl-2">
-              {SECONDARY_NAV.map(item => (
+              {secondaryNav.map(item => (
                 <NavLink key={item.href} {...item} />
               ))}
             </div>

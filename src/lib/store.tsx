@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
+import { createContext, useContext, useMemo, useState, useEffect, type ReactNode } from 'react';
 import {
   MOCK_INCOME_SOURCES,
   MOCK_INCOME_ENTRIES,
@@ -36,6 +36,7 @@ import type {
   PotId,
   IncomeSourceId,
 } from '@/lib/types';
+import type { AccessibleUser } from '@/lib/auth/types';
 
 // ─── localStorage helpers ─────────────────────────────────────────────────────
 
@@ -57,6 +58,8 @@ function save<T>(key: string, value: T): void {
 
 interface AppStore {
   hydrated: boolean;
+  currentUserId: string | null;
+  accessibleUsers: AccessibleUser[];
 
   // Budget
   budgets:           LocalBudget[];
@@ -143,28 +146,45 @@ function currentYearMonth(): string {
   return new Date().toISOString().slice(0, 7);
 }
 
-function normalizeIncomeSource(source: IncomeSource): IncomeSource {
+function normalizeOwnerUserIds(ownerUserIds: string[] | null | undefined, fallbackUserId: string | null): string[] {
+  const cleaned = [...new Set((ownerUserIds ?? []).filter(Boolean))];
+  if (cleaned.length > 0) return cleaned;
+  return fallbackUserId ? [fallbackUserId] : [];
+}
+
+function isRecordVisible(record: { ownerUserIds: string[] }, accessibleUserIds: string[]): boolean {
+  if (accessibleUserIds.length === 0) return true;
+  return record.ownerUserIds.some(userId => accessibleUserIds.includes(userId));
+}
+
+function filterOwnedRecords<T extends { ownerUserIds: string[] }>(records: T[], accessibleUserIds: string[]): T[] {
+  return records.filter(record => isRecordVisible(record, accessibleUserIds));
+}
+
+function normalizeIncomeSource(source: IncomeSource, fallbackUserId: string | null): IncomeSource {
   return {
     ...source,
     startingAnnualSalary: source.startingAnnualSalary ?? null,
+    ownerUserIds: normalizeOwnerUserIds(source.ownerUserIds, fallbackUserId),
   };
 }
 
-function normalizeIncomeSources(sources: IncomeSource[]): IncomeSource[] {
-  return sources.map(normalizeIncomeSource);
+function normalizeIncomeSources(sources: IncomeSource[], fallbackUserId: string | null): IncomeSource[] {
+  return sources.map(source => normalizeIncomeSource(source, fallbackUserId));
 }
 
-function normalizePot(pot: Pot): Pot {
+function normalizePot(pot: Pot, fallbackUserId: string | null): Pot {
   return {
     id: pot.id,
     name: pot.name,
     isBusiness: pot.isBusiness ?? false,
+    ownerUserIds: normalizeOwnerUserIds(pot.ownerUserIds, fallbackUserId),
     archived: pot.archived,
   };
 }
 
-function normalizePots(pots: Pot[]): Pot[] {
-  return pots.map(normalizePot);
+function normalizePots(pots: Pot[], fallbackUserId: string | null): Pot[] {
+  return pots.map(pot => normalizePot(pot, fallbackUserId));
 }
 
 function normalizeSalaryHistoryEntry(entry: SalaryHistory): SalaryHistory {
@@ -254,9 +274,10 @@ function migrateIncomeSourceProvider(
   };
 }
 
-function normalizeExpense(expense: Expense): Expense {
+function normalizeExpense(expense: Expense, fallbackUserId: string | null): Expense {
   return {
     ...expense,
+    ownerUserIds: normalizeOwnerUserIds(expense.ownerUserIds, fallbackUserId),
     oneOffPayment: expense.oneOffPayment ?? false,
     oneOffAppliedBudgetMonth: expense.oneOffAppliedBudgetMonth ?? null,
   };
@@ -265,10 +286,11 @@ function normalizeExpense(expense: Expense): Expense {
 function normalizeExpenseWithSource(
   expense: Expense & { incomeSourceId?: string | null },
   pots: Array<Pot & { incomeSourceId?: string }>,
+  fallbackUserId: string | null,
 ): Expense {
   const linkedPot = pots.find(pot => pot.id === expense.potId);
   return {
-    ...normalizeExpense(expense),
+    ...normalizeExpense(expense, fallbackUserId),
     incomeSourceId: (expense.incomeSourceId ?? linkedPot?.incomeSourceId ?? '') as Expense['incomeSourceId'],
   };
 }
@@ -276,30 +298,90 @@ function normalizeExpenseWithSource(
 function normalizeSavingWithSource(
   saving: Saving & { incomeSourceId?: string | null },
   pots: Array<Pot & { incomeSourceId?: string }>,
+  fallbackUserId: string | null,
 ): Saving {
   const linkedPot = pots.find(pot => pot.id === saving.potId);
   return {
     ...saving,
     incomeSourceId: (saving.incomeSourceId ?? linkedPot?.incomeSourceId ?? '') as Saving['incomeSourceId'],
+    ownerUserIds: normalizeOwnerUserIds(saving.ownerUserIds, fallbackUserId),
   };
 }
 
-function normalizeBudgets(budgets: LocalBudget[], expenses: Expense[]): LocalBudget[] {
-  return budgets.map(budget => sanitizeBudgetForOneOffExpenses(budget, expenses));
+function normalizeBudgets(
+  budgets: LocalBudget[],
+  expenses: Expense[],
+  savings: Saving[],
+  fallbackUserId: string | null,
+): LocalBudget[] {
+  const expenseOwners = new Map(expenses.map(expense => [expense.id as string, expense.ownerUserIds]));
+  const savingOwners = new Map(savings.map(saving => [saving.id as string, saving.ownerUserIds]));
+
+  return budgets.map(budget => sanitizeBudgetForOneOffExpenses({
+    ...budget,
+    items: budget.items.map(item => {
+      const sourceOwners = item.sourceType === 'expense'
+        ? expenseOwners.get(item.sourceId)
+        : savingOwners.get(item.sourceId);
+      const ownerUserIds = normalizeOwnerUserIds(item.ownerUserIds ?? sourceOwners, fallbackUserId);
+      return {
+        ...item,
+        ownerUserIds,
+        defaultOwnerUserIds: normalizeOwnerUserIds(item.defaultOwnerUserIds ?? sourceOwners ?? ownerUserIds, fallbackUserId),
+      };
+    }),
+  }, expenses));
 }
 
-function normalizeDebt(debt: Debt & { type?: 'loan' | 'credit-card' }): Debt {
+function normalizeMortgage(mortgage: Mortgage, fallbackUserId: string | null): Mortgage {
+  return {
+    ...mortgage,
+    ownerUserIds: normalizeOwnerUserIds(mortgage.ownerUserIds, fallbackUserId),
+  };
+}
+
+function normalizeProperty(property: Property, fallbackUserId: string | null): Property {
+  return {
+    ...property,
+    ownerUserIds: normalizeOwnerUserIds(property.ownerUserIds, fallbackUserId),
+  };
+}
+
+function normalizeSavingsAccount(account: SavingsAccount, fallbackUserId: string | null): SavingsAccount {
+  return {
+    ...account,
+    ownerUserIds: normalizeOwnerUserIds(account.ownerUserIds, fallbackUserId),
+  };
+}
+
+function normalizeSavingsAccounts(accounts: SavingsAccount[], fallbackUserId: string | null): SavingsAccount[] {
+  return accounts.map(account => normalizeSavingsAccount(account, fallbackUserId));
+}
+
+function normalizeDebt(debt: Debt & { type?: 'loan' | 'credit-card' }, fallbackUserId: string | null): Debt {
   return {
     ...debt,
     debtType: debt.debtType ?? debt.type ?? 'loan',
     borrowedAmount: debt.borrowedAmount ?? null,
     termMonths: debt.termMonths ?? null,
     startDate: debt.startDate ?? null,
+    ownerUserIds: normalizeOwnerUserIds(debt.ownerUserIds, fallbackUserId),
   };
 }
 
-function normalizeDebts(debts: Debt[]): Debt[] {
-  return debts.map(normalizeDebt);
+function normalizeDebts(debts: Debt[], fallbackUserId: string | null): Debt[] {
+  return debts.map(debt => normalizeDebt(debt, fallbackUserId));
+}
+
+function normalizePension(pension: Pension, fallbackUserId: string | null): Pension {
+  return {
+    ...pension,
+    ownerUserIds: normalizeOwnerUserIds(pension.ownerUserIds, fallbackUserId),
+  };
+}
+
+function normalizePensions(pensions: Pension[], fallbackUserId: string | null): Pension[] {
+  return pensions.map(pension => normalizePension(pension, fallbackUserId));
 }
 
 function normalizeDebtHistoryEntry(entry: DebtHistory): DebtHistory {
@@ -356,7 +438,15 @@ function syncOneOffExpenseIntoBudget(
 
 const AppContext = createContext<AppStore | null>(null);
 
-export function AppProvider({ children }: { children: ReactNode }) {
+export function AppProvider({
+  children,
+  currentUserId = null,
+  accessibleUsers = [],
+}: {
+  children: ReactNode;
+  currentUserId?: string | null;
+  accessibleUsers?: AccessibleUser[];
+}) {
   // Initialize from MOCK data so server and client render identical HTML (no hydration mismatch).
   // localStorage is loaded in the effect below, after hydration.
   const [hydrated,          setHydrated]          = useState(false);
@@ -381,18 +471,23 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [pensions,         setPensions]         = useState<Pension[]>        (MOCK_PENSIONS);
   const [pensionHistory,   setPensionHistory]   = useState<PensionHistory[]> (MOCK_PENSION_HISTORY);
 
+  const accessibleUserIds = useMemo(
+    () => accessibleUsers.map(user => user.id),
+    [accessibleUsers],
+  );
+
   // Runs once on the client after hydration — safe to access localStorage here.
   useEffect(() => {
     const loadedBudgets = load('wmp:budgets', MOCK_BUDGETS);
-    const loadedSources = normalizeIncomeSources(load('wmp:sources', MOCK_INCOME_SOURCES));
+    const loadedSources = normalizeIncomeSources(load('wmp:sources', MOCK_INCOME_SOURCES), currentUserId);
     const loadedEntries = load('wmp:entries', MOCK_INCOME_ENTRIES);
     const loadedSalaryHistory = normalizeSalaryHistory(load('wmp:salaryHistory', MOCK_SALARY_HISTORY));
     const loadedPots = load('wmp:pots', MOCK_POTS) as Array<Pot & { incomeSourceId?: string }>;
     const loadedExpenses = load('wmp:expenses', MOCK_EXPENSES) as Array<Expense & { incomeSourceId?: string | null }>;
     const loadedSavings = load('wmp:savings', MOCK_SAVINGS) as Array<Saving & { incomeSourceId?: string | null }>;
-    const normalizedPots = normalizePots(loadedPots);
-    const normalizedExpenses = loadedExpenses.map(expense => normalizeExpenseWithSource(expense, loadedPots));
-    const normalizedSavings = loadedSavings.map(saving => normalizeSavingWithSource(saving, loadedPots));
+    const normalizedPots = normalizePots(loadedPots, currentUserId);
+    const normalizedExpenses = loadedExpenses.map(expense => normalizeExpenseWithSource(expense, loadedPots, currentUserId));
+    const normalizedSavings = loadedSavings.map(saving => normalizeSavingWithSource(saving, loadedPots, currentUserId));
     const migratedIncomeData = migrateIncomeSourceProvider(
       loadedSources,
       loadedEntries,
@@ -402,7 +497,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       loadedBudgets,
     );
 
-    setBudgets          (normalizeBudgets(migratedIncomeData.budgets, migratedIncomeData.expenses));
+    setBudgets          (normalizeBudgets(migratedIncomeData.budgets, migratedIncomeData.expenses, migratedIncomeData.savings, currentUserId));
     setActiveBudgetMonth(load('wmp:activeBudgetMonth', '2026-04'));
     setSources          (migratedIncomeData.sources);
     setEntries          (migratedIncomeData.entries);
@@ -410,20 +505,50 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setPots             (normalizedPots);
     setExpenses         (migratedIncomeData.expenses);
     setSavings          (migratedIncomeData.savings);
-    setMortgages        (load('wmp:mortgages',         MOCK_MORTGAGES));
+    setMortgages        ((load('wmp:mortgages',         MOCK_MORTGAGES) as Mortgage[]).map(mortgage => normalizeMortgage(mortgage, currentUserId)));
     setMortgagePayments (load('wmp:mortgagePayments',  MOCK_MORTGAGE_PAYMENTS));
-    setProperties       (load('wmp:properties',        MOCK_PROPERTIES));
-    setSavingsAccounts  (load('wmp:savingsAccounts',   MOCK_SAVINGS_ACCOUNTS));
+    setProperties       ((load('wmp:properties',        MOCK_PROPERTIES) as Property[]).map(property => normalizeProperty(property, currentUserId)));
+    setSavingsAccounts  (normalizeSavingsAccounts(load('wmp:savingsAccounts', MOCK_SAVINGS_ACCOUNTS), currentUserId));
     setSavingsHistory   (load('wmp:savingsHistory',    MOCK_SAVINGS_HISTORY));
-    const loadedDebts = normalizeDebts(load('wmp:debts', MOCK_DEBTS));
+    const loadedDebts = normalizeDebts(load('wmp:debts', MOCK_DEBTS), currentUserId);
     const loadedDebtTransactions = normalizeDebtTransactions(load('wmp:debtTransactions', MOCK_DEBT_TRANSACTIONS));
     setDebts            (loadedDebts);
     setDebtTransactions (loadedDebtTransactions);
     setDebtHistory      (normalizeDebtHistory(load('wmp:debtHistory', MOCK_DEBT_HISTORY)));
-    setPensions         (load('wmp:pensions',          MOCK_PENSIONS));
+    setPensions         (normalizePensions(load('wmp:pensions', MOCK_PENSIONS), currentUserId));
     setPensionHistory   (load('wmp:pensionHistory',    MOCK_PENSION_HISTORY));
     setHydrated(true);
-  }, []);
+  }, [currentUserId]);
+
+  const visibleSources = filterOwnedRecords(sources, accessibleUserIds);
+  const visibleSourceIds = new Set(visibleSources.map(source => source.id as string));
+  const visibleEntries = entries.filter(entry => visibleSourceIds.has(entry.incomeSourceId as string));
+  const visibleSalaryHistory = salaryHistory.filter(entry => visibleSourceIds.has(entry.incomeSourceId as string));
+  const visiblePots = filterOwnedRecords(pots, accessibleUserIds);
+  const visiblePotIds = new Set(visiblePots.map(pot => pot.id as string));
+  const visibleExpenses = filterOwnedRecords(expenses, accessibleUserIds).filter(expense => visiblePotIds.has(expense.potId as string));
+  const visibleSavings = filterOwnedRecords(savings, accessibleUserIds).filter(saving => visiblePotIds.has(saving.potId as string));
+  const visibleMortgages = filterOwnedRecords(mortgages, accessibleUserIds);
+  const visibleMortgageIds = new Set(visibleMortgages.map(mortgage => mortgage.id as string));
+  const visibleMortgagePayments = mortgagePayments.filter(payment => visibleMortgageIds.has(payment.mortgageId as string));
+  const visibleSavingsAccounts = filterOwnedRecords(savingsAccounts, accessibleUserIds);
+  const visibleSavingsAccountIds = new Set(visibleSavingsAccounts.map(account => account.id as string));
+  const visibleSavingsHistory = savingsHistory.filter(entry => visibleSavingsAccountIds.has(entry.savingsAccountId as string));
+  const visibleProperties = filterOwnedRecords(properties, accessibleUserIds).filter(property => !property.mortgageId || visibleMortgageIds.has(property.mortgageId as string));
+  const visibleDebts = filterOwnedRecords(debts, accessibleUserIds);
+  const visibleDebtIds = new Set(visibleDebts.map(debt => debt.id as string));
+  const visibleDebtTransactions = debtTransactions.filter(entry => visibleDebtIds.has(entry.debtId as string));
+  const visibleDebtHistory = debtHistory.filter(entry => visibleDebtIds.has(entry.debtId as string));
+  const visiblePensions = filterOwnedRecords(pensions, accessibleUserIds);
+  const visiblePensionIds = new Set(visiblePensions.map(pension => pension.id as string));
+  const visiblePensionHistory = pensionHistory.filter(entry => visiblePensionIds.has(entry.pensionId as string));
+  const visibleBudgets = budgets.map(budget => ({
+    ...budget,
+    items: budget.items.filter(item =>
+      isRecordVisible({ ownerUserIds: normalizeOwnerUserIds(item.ownerUserIds, currentUserId) }, accessibleUserIds)
+      && visiblePotIds.has(item.potId as string)
+    ),
+  }));
 
   // Only persist after hydration so we don't overwrite stored data with MOCK data
   // during the initial effect flush.
@@ -448,23 +573,41 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const store: AppStore = {
     hydrated,
+    currentUserId,
+    accessibleUsers,
 
     // Budget
-    budgets, activeBudgetMonth,
-    sources, entries, salaryHistory, pots, expenses, savings,
+    budgets: visibleBudgets, activeBudgetMonth,
+    sources: visibleSources,
+    entries: visibleEntries,
+    salaryHistory: visibleSalaryHistory,
+    pots: visiblePots,
+    expenses: visibleExpenses,
+    savings: visibleSavings,
 
     upsertBudget: b => setBudgets(prev => {
-      const nextBudget = sanitizeBudgetForOneOffExpenses(b, expenses);
+      const nextBudget = sanitizeBudgetForOneOffExpenses(b, visibleExpenses);
       const idx = prev.findIndex(x => x.month === b.month);
       return idx >= 0
         ? prev.map(x => x.month === b.month ? nextBudget : x)
         : [...prev, nextBudget];
     }),
     createBudgetForMonth: month => {
-      const nextExpenses = applyPendingOneOffExpensesToBudgetMonth(month, expenses);
+      const visibleExpenseIds = new Set(visibleExpenses.map(expense => expense.id as string));
+      const nextExpenses = expenses.map(expense =>
+        visibleExpenseIds.has(expense.id as string)
+          ? applyPendingOneOffExpensesToBudgetMonth(month, [expense])[0]
+          : expense
+      );
+      const visibleNextExpenses = nextExpenses.filter(expense =>
+        isRecordVisible(expense, accessibleUserIds) && visiblePotIds.has(expense.potId as string)
+      );
       setExpenses(nextExpenses);
       setBudgets(prev => {
-        const budget = sanitizeBudgetForOneOffExpenses(createBudget(month, nextExpenses, savings), nextExpenses);
+        const budget = sanitizeBudgetForOneOffExpenses(
+          createBudget(month, visibleNextExpenses, visibleSavings),
+          visibleNextExpenses,
+        );
         const idx = prev.findIndex(x => x.month === month);
         return idx >= 0 ? prev.map(x => x.month === month ? budget : x) : [...prev, budget];
       });
@@ -486,11 +629,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setBudgetArchived: (month, v) => setBudgets(prev => prev.map(b => b.month !== month ? b : { ...b, archived: v })),
     setBudgetLocked:   (month, v) => setBudgets(prev => prev.map(b => b.month !== month ? b : { ...b, locked: v })),
 
-    upsertSource:  s  => setSources(prev  => upsert(prev, normalizeIncomeSource(s))),
+    upsertSource:  s  => setSources(prev  => upsert(prev, normalizeIncomeSource(s, currentUserId))),
     upsertEntry:   e  => setEntries(prev  => upsert(prev, e)),
     upsertSalaryHistory: h => setSalaryHistory(prev => upsert(prev, normalizeSalaryHistoryEntry(h))),
     removeSalaryHistory: id => setSalaryHistory(prev => prev.filter(entry => entry.id !== id)),
-    upsertPot:     p  => setPots(prev     => upsert(prev, normalizePot(p))),
+    upsertPot:     p  => setPots(prev     => upsert(prev, normalizePot(p, currentUserId))),
     upsertExpense: e  => {
       const existing = expenses.find(expense => expense.id === e.id) ?? null;
       const openCurrentBudget = budgets.find(b =>
@@ -499,6 +642,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
       let nextExpense: Expense = {
         ...e,
+        ownerUserIds: normalizeOwnerUserIds(e.ownerUserIds, currentUserId),
         oneOffPayment: e.oneOffPayment ?? false,
         oneOffAppliedBudgetMonth: e.oneOffPayment ? e.oneOffAppliedBudgetMonth ?? null : null,
       };
@@ -532,7 +676,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
         ));
       }
     },
-    upsertSaving:  s  => setSavings(prev  => upsert(prev, s)),
+    upsertSaving:  s  => setSavings(prev  => upsert(prev, {
+      ...s,
+      ownerUserIds: normalizeOwnerUserIds(s.ownerUserIds, currentUserId),
+    })),
 
     setSourceArchived:  (id, v) => setSources(prev  => setArchived(prev, id, v)),
     removeEntry:        id      => setEntries(prev   => prev.filter(e => e.id !== id)),
@@ -541,19 +688,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setSavingArchived:  (id, v) => setSavings(prev   => setArchived(prev, id, v)),
 
     // Wealth
-    mortgages, mortgagePayments, properties,
-    savingsAccounts, savingsHistory,
-    debts, debtTransactions, debtHistory,
-    pensions, pensionHistory,
+    mortgages: visibleMortgages, mortgagePayments: visibleMortgagePayments, properties: visibleProperties,
+    savingsAccounts: visibleSavingsAccounts, savingsHistory: visibleSavingsHistory,
+    debts: visibleDebts, debtTransactions: visibleDebtTransactions, debtHistory: visibleDebtHistory,
+    pensions: visiblePensions, pensionHistory: visiblePensionHistory,
 
-    upsertMortgage:        m => setMortgages(prev        => upsert(prev, m)),
+    upsertMortgage:        m => setMortgages(prev        => upsert(prev, normalizeMortgage(m, currentUserId))),
     upsertMortgagePayment: p => setMortgagePayments(prev => upsert(prev, p)),
     removeMortgagePayment: id => setMortgagePayments(prev => prev.filter(p => p.id !== id)),
-    upsertProperty:        p => setProperties(prev       => upsert(prev, p)),
-    upsertSavingsAccount:  a => setSavingsAccounts(prev  => upsert(prev, a)),
+    upsertProperty:        p => setProperties(prev       => upsert(prev, normalizeProperty(p, currentUserId))),
+    upsertSavingsAccount:  a => setSavingsAccounts(prev  => upsert(prev, normalizeSavingsAccount(a, currentUserId))),
     upsertSavingsHistory:  h => setSavingsHistory(prev   => upsert(prev, h)),
     removeSavingsHistory:  id => setSavingsHistory(prev  => prev.filter(h => h.id !== id)),
-    upsertDebt:            d => setDebts(prev            => upsert(prev, normalizeDebt(d as Debt & { type?: 'loan' | 'credit-card' }))),
+    upsertDebt:            d => setDebts(prev => upsert(prev, normalizeDebt(d as Debt & { type?: 'loan' | 'credit-card' }, currentUserId))),
     upsertDebtTransaction: t => {
       const transaction = normalizeDebtTransaction(t);
       setDebtTransactions(prev => upsert(prev, transaction));
@@ -579,7 +726,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     },
     upsertDebtHistory:     h => setDebtHistory(prev      => upsert(prev, normalizeDebtHistoryEntry(h))),
     removeDebtHistory:     id => setDebtHistory(prev     => prev.filter(h => h.id !== id)),
-    upsertPension:         p => setPensions(prev         => upsert(prev, p)),
+    upsertPension:         p => setPensions(prev         => upsert(prev, normalizePension(p, currentUserId))),
     upsertPensionHistory:  h => setPensionHistory(prev   => upsert(prev, h)),
     removePensionHistory:  id => setPensionHistory(prev  => prev.filter(h => h.id !== id)),
 

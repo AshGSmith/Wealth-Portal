@@ -4,10 +4,16 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { AlertTriangle, ArrowRight, ChevronLeft, ChevronRight } from 'lucide-react';
 import PageHeader from '@/components/layout/PageHeader';
+import CriticalVsNonCriticalBarCard from '@/components/ui/CriticalVsNonCriticalBarCard';
 import ExpensesSavingsPieCard from '@/components/ui/ExpensesSavingsPieCard';
 import NetWorthTile from '@/components/ui/NetWorthTile';
 import Tile from '@/components/ui/Tile';
-import { calcBudget, calcBudgetMetricsForMonth, findBudgetForMonth } from '@/lib/budgetCalc';
+import {
+  calcBudget,
+  calcBudgetMetricsForMonth,
+  calcBudgetSpendingBreakdownForMonth,
+  findBudgetForMonth,
+} from '@/lib/budgetCalc';
 import { fmtCurrency, fmtMonth } from '@/lib/format';
 import { useStore } from '@/lib/store';
 import { mortgageLiability, mortgagesWithFixedTermEndingSoon, totalPropertyValue } from '@/lib/wealthCalc';
@@ -117,6 +123,13 @@ export default function DashboardPage() {
     ? calcBudget(activeBudget, activePots, store.sources, store.entries)
     : null;
   const budgetMetrics = calcBudgetMetricsForMonth(
+    selectedMonth,
+    store.budgets,
+    store.pots,
+    store.sources,
+    store.entries,
+  );
+  const budgetSpendingBreakdown = calcBudgetSpendingBreakdownForMonth(
     selectedMonth,
     store.budgets,
     store.pots,
@@ -298,11 +311,18 @@ export default function DashboardPage() {
         <section className="space-y-2">
           <h2 className="text-sm font-semibold" style={{ color: 'var(--foreground)' }}>Insights</h2>
 
-          <div className="grid grid-cols-1 gap-2.5">
+          <div className="grid grid-cols-1 gap-2.5 lg:grid-cols-2">
             <ExpensesSavingsPieCard
               expenses={budgetMetrics.totalExpenses}
               savings={budgetMetrics.totalSavings}
               footer={budgetCalc ? `Selected month split for ${fmtMonth(selectedMonth)}.` : `No budget data for ${fmtMonth(selectedMonth)}.`}
+            />
+            <CriticalVsNonCriticalBarCard
+              criticalExpenses={budgetSpendingBreakdown.criticalExpenses}
+              nonCriticalExpenses={budgetSpendingBreakdown.nonCriticalExpenses}
+              criticalSavings={budgetSpendingBreakdown.criticalSavings}
+              nonCriticalSavings={budgetSpendingBreakdown.nonCriticalSavings}
+              footer={budgetCalc ? `Criticality split for ${fmtMonth(selectedMonth)}.` : `No budget data for ${fmtMonth(selectedMonth)}.`}
             />
           </div>
         </section>

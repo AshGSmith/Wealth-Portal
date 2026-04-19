@@ -22,6 +22,7 @@ export interface LocalBudget {
   month:    string;   // YYYY-MM
   archived: boolean;
   locked:   boolean;
+  ownerUserIds: string[];
   items:    ResolvedLineItem[];
 }
 
@@ -134,13 +135,15 @@ export function createBudget(
   savings:  Saving[],
 ): LocalBudget {
   const preparedExpenses = applyPendingOneOffExpensesToBudgetMonth(month, expenses);
+  const items = resolveItemsForMonth(month, preparedExpenses, savings);
 
   return {
     id:       `budget-${Date.now()}`,
     month,
     archived: false,
     locked:   false,
-    items:    resolveItemsForMonth(month, preparedExpenses, savings),
+    ownerUserIds: [...new Set(items.flatMap(item => item.ownerUserIds))],
+    items,
   };
 }
 
@@ -169,6 +172,10 @@ export function refreshBudget(
         ownerUserIds: existingItem.ownerUserIds,
       };
     }),
+    ownerUserIds: [...new Set(nextResolvedItems.flatMap(item => {
+      const existingItem = existingItemsById.get(item.id);
+      return existingItem?.ownerUserIds ?? item.ownerUserIds;
+    }))],
   };
 }
 
@@ -213,5 +220,9 @@ export function sanitizeBudgetForOneOffExpenses(
     }
   }
 
-  return { ...budget, items };
+  return {
+    ...budget,
+    ownerUserIds: [...new Set(items.flatMap(item => item.ownerUserIds))],
+    items,
+  };
 }

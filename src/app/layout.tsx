@@ -6,6 +6,7 @@ import { AppProvider }   from '@/lib/store';
 import Header from '@/components/layout/Header';
 import Sidebar from '@/components/layout/Sidebar';
 import BottomNav from '@/components/layout/BottomNav';
+import LegacyDataMigrationBanner from '@/components/layout/LegacyDataMigrationBanner';
 import { getAuthView, isBirthdayMonth } from '@/lib/auth/server';
 import { stopImpersonationAction } from '@/lib/auth/actions';
 
@@ -15,7 +16,6 @@ const geistMono = Geist_Mono({ variable: '--font-geist-mono', subsets: ['latin']
 export const metadata: Metadata = {
   title: 'Wealth Management Portal',
   description: 'Track your finances, budget, and wealth in one place.',
-  icons: { icon: '/logo.jpg' },
 };
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
@@ -66,6 +66,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                 </div>
               </div>
             )}
+            {auth && <LegacyDataMigrationBanner />}
             <div className="flex flex-1 mx-auto w-full max-w-5xl">
               <Sidebar isAdmin={auth?.user.isAdmin ?? false} />
               <main className="flex-1 min-w-0 p-4 pb-24 md:pb-6 md:p-6" style={{ background: 'var(--background)' }}>

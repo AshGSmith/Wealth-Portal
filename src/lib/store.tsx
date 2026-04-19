@@ -2,25 +2,6 @@
 
 import { createContext, useContext, useMemo, useState, useEffect, type ReactNode } from 'react';
 import {
-  MOCK_INCOME_SOURCES,
-  MOCK_INCOME_ENTRIES,
-  MOCK_SALARY_HISTORY,
-  MOCK_POTS,
-  MOCK_EXPENSES,
-  MOCK_SAVINGS,
-  MOCK_BUDGETS,
-  MOCK_MORTGAGES,
-  MOCK_MORTGAGE_PAYMENTS,
-  MOCK_PROPERTIES,
-  MOCK_SAVINGS_ACCOUNTS,
-  MOCK_SAVINGS_HISTORY,
-  MOCK_DEBTS,
-  MOCK_DEBT_TRANSACTIONS,
-  MOCK_DEBT_HISTORY,
-  MOCK_PENSIONS,
-  MOCK_PENSION_HISTORY,
-} from '@/lib/mock';
-import {
   applyPendingOneOffExpensesToBudgetMonth,
   createBudget,
   refreshBudget,
@@ -38,15 +19,18 @@ import type {
   IncomeSourceId,
 } from '@/lib/types';
 import type { AccessibleUser } from '@/lib/auth/types';
+import type { PersistedAppData } from '@/lib/data/server';
 
-// ─── localStorage helpers ─────────────────────────────────────────────────────
+// ─── Legacy localStorage helpers ──────────────────────────────────────────────
 
 const STORAGE_VERSION = '0.1.2';
 const STORAGE_VERSION_KEY = 'wmp:storageVersion';
 const STORAGE_BACKUP_PREFIX = 'wmp:backup:';
+const ACTIVE_BUDGET_MONTH_KEY = 'wmp:activeBudgetMonth';
+const LEGACY_MIGRATION_DISMISSED_PREFIX = 'wmp:legacyMigrationDismissed:';
+const LEGACY_MIGRATION_IMPORTED_PREFIX = 'wmp:legacyMigrationImported:';
 const STORAGE_KEYS = [
   'wmp:budgets',
-  'wmp:activeBudgetMonth',
   'wmp:sources',
   'wmp:entries',
   'wmp:salaryHistory',
@@ -75,8 +59,12 @@ function load<T>(key: string, fallback: T): T {
   }
 }
 
-function save<T>(key: string, value: T): void {
+function saveLocalValue<T>(key: string, value: T): void {
   try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* quota exceeded or SSR */ }
+}
+
+function removeLocalValue(key: string): void {
+  try { localStorage.removeItem(key); } catch { /* noop */ }
 }
 
 function ensureStorageUpgradeBackup(): void {
@@ -110,12 +98,48 @@ function ensureStorageUpgradeBackup(): void {
   }
 }
 
+function emptyPersistedAppData(): PersistedAppData {
+  return {
+    budgets: [],
+    sources: [],
+    entries: [],
+    salaryHistory: [],
+    pots: [],
+    expenses: [],
+    savings: [],
+    mortgages: [],
+    mortgagePayments: [],
+    properties: [],
+    savingsAccounts: [],
+    savingsHistory: [],
+    debts: [],
+    debtTransactions: [],
+    debtHistory: [],
+    pensions: [],
+    pensionHistory: [],
+  };
+}
+
+function isPersistedAppDataEmpty(data: PersistedAppData): boolean {
+  return Object.values(data).every(value => Array.isArray(value) && value.length === 0);
+}
+
+function countPersistedRecords(data: PersistedAppData): number {
+  return Object.values(data).reduce((total, value) => total + (Array.isArray(value) ? value.length : 0), 0);
+}
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface AppStore {
   hydrated: boolean;
   currentUserId: string | null;
   accessibleUsers: AccessibleUser[];
+  legacyMigrationAvailable: boolean;
+  legacyMigrationRequiresConfirmation: boolean;
+  legacyMigrationInProgress: boolean;
+  legacyMigrationRecordCount: number;
+  importLegacyLocalData: () => Promise<void>;
+  dismissLegacyMigration: () => void;
 
   // Budget
   budgets:           LocalBudget[];
@@ -505,9 +529,142 @@ function syncOneOffExpenseIntoBudget(
   };
 }
 
+function normalizePersistedDataSnapshot(
+  snapshot: PersistedAppData,
+  fallbackUserId: string | null,
+): PersistedAppData {
+  const loadedPots = snapshot.pots as Array<Pot & { incomeSourceId?: string }>;
+  const loadedExpenses = snapshot.expenses as Array<Expense & { incomeSourceId?: string | null }>;
+  const loadedSavings = snapshot.savings as Array<Saving & { incomeSourceId?: string | null }>;
+  const normalizedPots = normalizePots(loadedPots, fallbackUserId);
+  const normalizedExpenses = loadedExpenses.map(expense => normalizeExpenseWithSource(expense, loadedPots, fallbackUserId));
+  const normalizedSavings = loadedSavings.map(saving => normalizeSavingWithSource(saving, loadedPots, fallbackUserId));
+  const migratedIncomeData = migrateIncomeSourceProvider(
+    normalizeIncomeSources(snapshot.sources, fallbackUserId),
+    snapshot.entries,
+    normalizeSalaryHistory(snapshot.salaryHistory),
+    normalizedExpenses,
+    normalizedSavings,
+    snapshot.budgets,
+  );
+
+  return {
+    budgets: normalizeBudgets(migratedIncomeData.budgets, migratedIncomeData.expenses, migratedIncomeData.savings, fallbackUserId),
+    sources: migratedIncomeData.sources,
+    entries: migratedIncomeData.entries,
+    salaryHistory: migratedIncomeData.salaryHistory,
+    pots: normalizedPots,
+    expenses: migratedIncomeData.expenses,
+    savings: migratedIncomeData.savings,
+    mortgages: snapshot.mortgages.map(mortgage => normalizeMortgage(mortgage, fallbackUserId)),
+    mortgagePayments: snapshot.mortgagePayments,
+    properties: snapshot.properties.map(property => normalizeProperty(property, fallbackUserId)),
+    savingsAccounts: normalizeSavingsAccounts(snapshot.savingsAccounts, fallbackUserId),
+    savingsHistory: snapshot.savingsHistory,
+    debts: normalizeDebts(snapshot.debts, fallbackUserId),
+    debtTransactions: normalizeDebtTransactions(snapshot.debtTransactions),
+    debtHistory: normalizeDebtHistory(snapshot.debtHistory),
+    pensions: normalizePensions(snapshot.pensions, fallbackUserId),
+    pensionHistory: snapshot.pensionHistory,
+  };
+}
+
+function loadLegacyLocalAppData(fallbackUserId: string | null): PersistedAppData {
+  const emptyData = emptyPersistedAppData();
+  return normalizePersistedDataSnapshot({
+    budgets: load('wmp:budgets', emptyData.budgets),
+    sources: load('wmp:sources', emptyData.sources),
+    entries: load('wmp:entries', emptyData.entries),
+    salaryHistory: load('wmp:salaryHistory', emptyData.salaryHistory),
+    pots: load('wmp:pots', emptyData.pots),
+    expenses: load('wmp:expenses', emptyData.expenses),
+    savings: load('wmp:savings', emptyData.savings),
+    mortgages: load('wmp:mortgages', emptyData.mortgages),
+    mortgagePayments: load('wmp:mortgagePayments', emptyData.mortgagePayments),
+    properties: load('wmp:properties', emptyData.properties),
+    savingsAccounts: load('wmp:savingsAccounts', emptyData.savingsAccounts),
+    savingsHistory: load('wmp:savingsHistory', emptyData.savingsHistory),
+    debts: load('wmp:debts', emptyData.debts),
+    debtTransactions: load('wmp:debtTransactions', emptyData.debtTransactions),
+    debtHistory: load('wmp:debtHistory', emptyData.debtHistory),
+    pensions: load('wmp:pensions', emptyData.pensions),
+    pensionHistory: load('wmp:pensionHistory', emptyData.pensionHistory),
+  }, fallbackUserId);
+}
+
+async function fetchPersistedAppData(): Promise<PersistedAppData> {
+  const response = await fetch('/api/app-data', {
+    method: 'GET',
+    credentials: 'include',
+    cache: 'no-store',
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to load app data (${response.status})`);
+  }
+
+  return response.json() as Promise<PersistedAppData>;
+}
+
+async function savePersistedAppData(snapshot: PersistedAppData): Promise<void> {
+  const response = await fetch('/api/app-data', {
+    method: 'PUT',
+    credentials: 'include',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(snapshot),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to save app data (${response.status})`);
+  }
+}
+
 // ─── Context ──────────────────────────────────────────────────────────────────
 
 const AppContext = createContext<AppStore | null>(null);
+
+function applySnapshotToState(
+  snapshot: PersistedAppData,
+  setters: {
+    setBudgets: (value: LocalBudget[]) => void;
+    setSources: (value: IncomeSource[]) => void;
+    setEntries: (value: IncomeEntry[]) => void;
+    setSalaryHistory: (value: SalaryHistory[]) => void;
+    setPots: (value: Pot[]) => void;
+    setExpenses: (value: Expense[]) => void;
+    setSavings: (value: Saving[]) => void;
+    setMortgages: (value: Mortgage[]) => void;
+    setMortgagePayments: (value: MortgagePayment[]) => void;
+    setProperties: (value: Property[]) => void;
+    setSavingsAccounts: (value: SavingsAccount[]) => void;
+    setSavingsHistory: (value: SavingsHistory[]) => void;
+    setDebts: (value: Debt[]) => void;
+    setDebtTransactions: (value: DebtTransaction[]) => void;
+    setDebtHistory: (value: DebtHistory[]) => void;
+    setPensions: (value: Pension[]) => void;
+    setPensionHistory: (value: PensionHistory[]) => void;
+  },
+): void {
+  setters.setBudgets(snapshot.budgets);
+  setters.setSources(snapshot.sources);
+  setters.setEntries(snapshot.entries);
+  setters.setSalaryHistory(snapshot.salaryHistory);
+  setters.setPots(snapshot.pots);
+  setters.setExpenses(snapshot.expenses);
+  setters.setSavings(snapshot.savings);
+  setters.setMortgages(snapshot.mortgages);
+  setters.setMortgagePayments(snapshot.mortgagePayments);
+  setters.setProperties(snapshot.properties);
+  setters.setSavingsAccounts(snapshot.savingsAccounts);
+  setters.setSavingsHistory(snapshot.savingsHistory);
+  setters.setDebts(snapshot.debts);
+  setters.setDebtTransactions(snapshot.debtTransactions);
+  setters.setDebtHistory(snapshot.debtHistory);
+  setters.setPensions(snapshot.pensions);
+  setters.setPensionHistory(snapshot.pensionHistory);
+}
 
 export function AppProvider({
   children,
@@ -518,80 +675,154 @@ export function AppProvider({
   currentUserId?: string | null;
   accessibleUsers?: AccessibleUser[];
 }) {
-  // Initialize from MOCK data so server and client render identical HTML (no hydration mismatch).
-  // localStorage is loaded in the effect below, after hydration.
+  const initialData = useMemo(() => emptyPersistedAppData(), []);
+
   const [hydrated,          setHydrated]          = useState(false);
-  const [budgets,           setBudgets]           = useState<LocalBudget[]>(MOCK_BUDGETS);
+  const [legacyMigrationData, setLegacyMigrationData] = useState<PersistedAppData | null>(null);
+  const [legacyMigrationRequiresConfirmation, setLegacyMigrationRequiresConfirmation] = useState(false);
+  const [legacyMigrationDismissed, setLegacyMigrationDismissed] = useState(false);
+  const [legacyMigrationInProgress, setLegacyMigrationInProgress] = useState(false);
+  const [budgets,           setBudgets]           = useState<LocalBudget[]>(initialData.budgets);
   const [activeBudgetMonth, setActiveBudgetMonth] = useState(currentYearMonth());
-  const [sources,           setSources]           = useState<IncomeSource[]>(MOCK_INCOME_SOURCES);
-  const [entries,           setEntries]           = useState<IncomeEntry[]> (MOCK_INCOME_ENTRIES);
-  const [salaryHistory,     setSalaryHistory]     = useState<SalaryHistory[]>(MOCK_SALARY_HISTORY);
-  const [pots,              setPots]              = useState<Pot[]>         (MOCK_POTS);
-  const [expenses,          setExpenses]          = useState<Expense[]>     (MOCK_EXPENSES);
-  const [savings,           setSavings]           = useState<Saving[]>      (MOCK_SAVINGS);
+  const [sources,           setSources]           = useState<IncomeSource[]>(initialData.sources);
+  const [entries,           setEntries]           = useState<IncomeEntry[]> (initialData.entries);
+  const [salaryHistory,     setSalaryHistory]     = useState<SalaryHistory[]>(initialData.salaryHistory);
+  const [pots,              setPots]              = useState<Pot[]>         (initialData.pots);
+  const [expenses,          setExpenses]          = useState<Expense[]>     (initialData.expenses);
+  const [savings,           setSavings]           = useState<Saving[]>      (initialData.savings);
 
   // Wealth state
-  const [mortgages,        setMortgages]        = useState<Mortgage[]>       (MOCK_MORTGAGES);
-  const [mortgagePayments, setMortgagePayments] = useState<MortgagePayment[]>(MOCK_MORTGAGE_PAYMENTS);
-  const [properties,       setProperties]       = useState<Property[]>       (MOCK_PROPERTIES);
-  const [savingsAccounts,  setSavingsAccounts]  = useState<SavingsAccount[]> (MOCK_SAVINGS_ACCOUNTS);
-  const [savingsHistory,   setSavingsHistory]   = useState<SavingsHistory[]> (MOCK_SAVINGS_HISTORY);
-  const [debts,            setDebts]            = useState<Debt[]>           (MOCK_DEBTS);
-  const [debtTransactions, setDebtTransactions] = useState<DebtTransaction[]>(MOCK_DEBT_TRANSACTIONS);
-  const [debtHistory,      setDebtHistory]      = useState<DebtHistory[]>    (MOCK_DEBT_HISTORY);
-  const [pensions,         setPensions]         = useState<Pension[]>        (MOCK_PENSIONS);
-  const [pensionHistory,   setPensionHistory]   = useState<PensionHistory[]> (MOCK_PENSION_HISTORY);
+  const [mortgages,        setMortgages]        = useState<Mortgage[]>       (initialData.mortgages);
+  const [mortgagePayments, setMortgagePayments] = useState<MortgagePayment[]>(initialData.mortgagePayments);
+  const [properties,       setProperties]       = useState<Property[]>       (initialData.properties);
+  const [savingsAccounts,  setSavingsAccounts]  = useState<SavingsAccount[]> (initialData.savingsAccounts);
+  const [savingsHistory,   setSavingsHistory]   = useState<SavingsHistory[]> (initialData.savingsHistory);
+  const [debts,            setDebts]            = useState<Debt[]>           (initialData.debts);
+  const [debtTransactions, setDebtTransactions] = useState<DebtTransaction[]>(initialData.debtTransactions);
+  const [debtHistory,      setDebtHistory]      = useState<DebtHistory[]>    (initialData.debtHistory);
+  const [pensions,         setPensions]         = useState<Pension[]>        (initialData.pensions);
+  const [pensionHistory,   setPensionHistory]   = useState<PensionHistory[]> (initialData.pensionHistory);
 
   const accessibleUserIds = useMemo(
     () => accessibleUsers.map(user => user.id),
     [accessibleUsers],
   );
+  const legacyMigrationDismissedKey = currentUserId ? `${LEGACY_MIGRATION_DISMISSED_PREFIX}${currentUserId}` : null;
+  const legacyMigrationImportedKey = currentUserId ? `${LEGACY_MIGRATION_IMPORTED_PREFIX}${currentUserId}` : null;
 
-  // Runs once on the client after hydration — safe to access localStorage here.
   useEffect(() => {
-    ensureStorageUpgradeBackup();
+    let cancelled = false;
 
-    const loadedBudgets = load('wmp:budgets', MOCK_BUDGETS);
-    const loadedSources = normalizeIncomeSources(load('wmp:sources', MOCK_INCOME_SOURCES), currentUserId);
-    const loadedEntries = load('wmp:entries', MOCK_INCOME_ENTRIES);
-    const loadedSalaryHistory = normalizeSalaryHistory(load('wmp:salaryHistory', MOCK_SALARY_HISTORY));
-    const loadedPots = load('wmp:pots', MOCK_POTS) as Array<Pot & { incomeSourceId?: string }>;
-    const loadedExpenses = load('wmp:expenses', MOCK_EXPENSES) as Array<Expense & { incomeSourceId?: string | null }>;
-    const loadedSavings = load('wmp:savings', MOCK_SAVINGS) as Array<Saving & { incomeSourceId?: string | null }>;
-    const normalizedPots = normalizePots(loadedPots, currentUserId);
-    const normalizedExpenses = loadedExpenses.map(expense => normalizeExpenseWithSource(expense, loadedPots, currentUserId));
-    const normalizedSavings = loadedSavings.map(saving => normalizeSavingWithSource(saving, loadedPots, currentUserId));
-    const migratedIncomeData = migrateIncomeSourceProvider(
-      loadedSources,
-      loadedEntries,
-      loadedSalaryHistory,
-      normalizedExpenses,
-      normalizedSavings,
-      loadedBudgets,
-    );
+    async function hydrateFromAccount() {
+      setActiveBudgetMonth(load(ACTIVE_BUDGET_MONTH_KEY, currentYearMonth()));
 
-    setBudgets          (normalizeBudgets(migratedIncomeData.budgets, migratedIncomeData.expenses, migratedIncomeData.savings, currentUserId));
-    setActiveBudgetMonth(load('wmp:activeBudgetMonth', currentYearMonth()));
-    setSources          (migratedIncomeData.sources);
-    setEntries          (migratedIncomeData.entries);
-    setSalaryHistory    (migratedIncomeData.salaryHistory);
-    setPots             (normalizedPots);
-    setExpenses         (migratedIncomeData.expenses);
-    setSavings          (migratedIncomeData.savings);
-    setMortgages        ((load('wmp:mortgages',         MOCK_MORTGAGES) as Mortgage[]).map(mortgage => normalizeMortgage(mortgage, currentUserId)));
-    setMortgagePayments (load('wmp:mortgagePayments',  MOCK_MORTGAGE_PAYMENTS));
-    setProperties       ((load('wmp:properties',        MOCK_PROPERTIES) as Property[]).map(property => normalizeProperty(property, currentUserId)));
-    setSavingsAccounts  (normalizeSavingsAccounts(load('wmp:savingsAccounts', MOCK_SAVINGS_ACCOUNTS), currentUserId));
-    setSavingsHistory   (load('wmp:savingsHistory',    MOCK_SAVINGS_HISTORY));
-    const loadedDebts = normalizeDebts(load('wmp:debts', MOCK_DEBTS), currentUserId);
-    const loadedDebtTransactions = normalizeDebtTransactions(load('wmp:debtTransactions', MOCK_DEBT_TRANSACTIONS));
-    setDebts            (loadedDebts);
-    setDebtTransactions (loadedDebtTransactions);
-    setDebtHistory      (normalizeDebtHistory(load('wmp:debtHistory', MOCK_DEBT_HISTORY)));
-    setPensions         (normalizePensions(load('wmp:pensions', MOCK_PENSIONS), currentUserId));
-    setPensionHistory   (load('wmp:pensionHistory',    MOCK_PENSION_HISTORY));
-    setHydrated(true);
-  }, [currentUserId]);
+      if (!currentUserId) {
+        if (!cancelled) {
+          setLegacyMigrationData(null);
+          setLegacyMigrationRequiresConfirmation(false);
+          setLegacyMigrationDismissed(false);
+          applySnapshotToState(emptyPersistedAppData(), {
+            setBudgets,
+            setSources,
+            setEntries,
+            setSalaryHistory,
+            setPots,
+            setExpenses,
+            setSavings,
+            setMortgages,
+            setMortgagePayments,
+            setProperties,
+            setSavingsAccounts,
+            setSavingsHistory,
+            setDebts,
+            setDebtTransactions,
+            setDebtHistory,
+            setPensions,
+            setPensionHistory,
+          });
+          setHydrated(true);
+        }
+        return;
+      }
+
+      ensureStorageUpgradeBackup();
+
+      try {
+        const serverData = normalizePersistedDataSnapshot(await fetchPersistedAppData(), currentUserId);
+        const legacyData = loadLegacyLocalAppData(currentUserId);
+        const hasLegacyData = !isPersistedAppDataEmpty(legacyData);
+        const backendHasData = !isPersistedAppDataEmpty(serverData);
+        const dismissed = legacyMigrationDismissedKey ? load(legacyMigrationDismissedKey, false) : false;
+        const imported = legacyMigrationImportedKey ? load(legacyMigrationImportedKey, false) : false;
+
+        if (cancelled) return;
+
+        setLegacyMigrationData(hasLegacyData && !dismissed && !imported ? legacyData : null);
+        setLegacyMigrationRequiresConfirmation(hasLegacyData && backendHasData);
+        setLegacyMigrationDismissed(dismissed || imported);
+
+        applySnapshotToState(serverData, {
+          setBudgets,
+          setSources,
+          setEntries,
+          setSalaryHistory,
+          setPots,
+          setExpenses,
+          setSavings,
+          setMortgages,
+          setMortgagePayments,
+          setProperties,
+          setSavingsAccounts,
+          setSavingsHistory,
+          setDebts,
+          setDebtTransactions,
+          setDebtHistory,
+          setPensions,
+          setPensionHistory,
+        });
+      } catch (error) {
+        if (cancelled) return;
+
+        console.error('Failed to hydrate authenticated app data from the backend.', error);
+        const legacyData = loadLegacyLocalAppData(currentUserId);
+        const hasLegacyData = !isPersistedAppDataEmpty(legacyData);
+        const dismissed = legacyMigrationDismissedKey ? load(legacyMigrationDismissedKey, false) : false;
+        const imported = legacyMigrationImportedKey ? load(legacyMigrationImportedKey, false) : false;
+        setLegacyMigrationData(hasLegacyData && !dismissed && !imported ? legacyData : null);
+        setLegacyMigrationRequiresConfirmation(false);
+        setLegacyMigrationDismissed(dismissed || imported);
+        applySnapshotToState(emptyPersistedAppData(), {
+          setBudgets,
+          setSources,
+          setEntries,
+          setSalaryHistory,
+          setPots,
+          setExpenses,
+          setSavings,
+          setMortgages,
+          setMortgagePayments,
+          setProperties,
+          setSavingsAccounts,
+          setSavingsHistory,
+          setDebts,
+          setDebtTransactions,
+          setDebtHistory,
+          setPensions,
+          setPensionHistory,
+        });
+      } finally {
+        if (!cancelled) {
+          setHydrated(true);
+        }
+      }
+    }
+
+    void hydrateFromAccount();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentUserId, legacyMigrationDismissedKey, legacyMigrationImportedKey]);
 
   const visibleSources = filterOwnedRecords(sources, accessibleUserIds);
   const visibleSourceIds = new Set(visibleSources.map(source => source.id as string));
@@ -615,39 +846,139 @@ export function AppProvider({
   const visiblePensions = filterOwnedRecords(pensions, accessibleUserIds);
   const visiblePensionIds = new Set(visiblePensions.map(pension => pension.id as string));
   const visiblePensionHistory = pensionHistory.filter(entry => visiblePensionIds.has(entry.pensionId as string));
-  const visibleBudgets = budgets.map(budget => ({
-    ...budget,
-    items: budget.items.filter(item =>
-      isRecordVisible({ ownerUserIds: normalizeOwnerUserIds(item.ownerUserIds, currentUserId) }, accessibleUserIds)
-      && visiblePotIds.has(item.potId as string)
-    ),
-  }));
+  const visibleBudgets = budgets
+    .map(budget => ({
+      ...budget,
+      items: budget.items.filter(item =>
+        isRecordVisible({ ownerUserIds: normalizeOwnerUserIds(item.ownerUserIds, currentUserId) }, accessibleUserIds)
+        && visiblePotIds.has(item.potId as string)
+      ),
+    }))
+    .filter(budget =>
+      budget.items.length > 0
+      || isRecordVisible({ ownerUserIds: normalizeOwnerUserIds(budget.ownerUserIds, currentUserId) }, accessibleUserIds)
+    );
 
-  // Only persist after hydration so we don't overwrite stored data with MOCK data
-  // during the initial effect flush.
-  useEffect(() => { if (hydrated) save('wmp:budgets',           budgets);           }, [budgets,           hydrated]);
-  useEffect(() => { if (hydrated) save('wmp:activeBudgetMonth', activeBudgetMonth); }, [activeBudgetMonth, hydrated]);
-  useEffect(() => { if (hydrated) save('wmp:sources',           sources);           }, [sources,          hydrated]);
-  useEffect(() => { if (hydrated) save('wmp:entries',           entries);          }, [entries,          hydrated]);
-  useEffect(() => { if (hydrated) save('wmp:salaryHistory',     salaryHistory);    }, [salaryHistory,    hydrated]);
-  useEffect(() => { if (hydrated) save('wmp:pots',              pots);             }, [pots,             hydrated]);
-  useEffect(() => { if (hydrated) save('wmp:expenses',          expenses);         }, [expenses,         hydrated]);
-  useEffect(() => { if (hydrated) save('wmp:savings',           savings);          }, [savings,          hydrated]);
-  useEffect(() => { if (hydrated) save('wmp:mortgages',         mortgages);        }, [mortgages,        hydrated]);
-  useEffect(() => { if (hydrated) save('wmp:mortgagePayments',  mortgagePayments); }, [mortgagePayments, hydrated]);
-  useEffect(() => { if (hydrated) save('wmp:properties',        properties);       }, [properties,       hydrated]);
-  useEffect(() => { if (hydrated) save('wmp:savingsAccounts',   savingsAccounts);  }, [savingsAccounts,  hydrated]);
-  useEffect(() => { if (hydrated) save('wmp:savingsHistory',    savingsHistory);   }, [savingsHistory,   hydrated]);
-  useEffect(() => { if (hydrated) save('wmp:debts',             debts);            }, [debts,            hydrated]);
-  useEffect(() => { if (hydrated) save('wmp:debtTransactions',  debtTransactions); }, [debtTransactions, hydrated]);
-  useEffect(() => { if (hydrated) save('wmp:debtHistory',       debtHistory);      }, [debtHistory,      hydrated]);
-  useEffect(() => { if (hydrated) save('wmp:pensions',          pensions);         }, [pensions,         hydrated]);
-  useEffect(() => { if (hydrated) save('wmp:pensionHistory',    pensionHistory);   }, [pensionHistory,   hydrated]);
+  useEffect(() => {
+    if (!hydrated) return;
+    saveLocalValue(ACTIVE_BUDGET_MONTH_KEY, activeBudgetMonth);
+  }, [activeBudgetMonth, hydrated]);
+
+  useEffect(() => {
+    if (!hydrated || !currentUserId) return;
+
+    const timeoutId = window.setTimeout(() => {
+      void savePersistedAppData({
+        budgets,
+        sources,
+        entries,
+        salaryHistory,
+        pots,
+        expenses,
+        savings,
+        mortgages,
+        mortgagePayments,
+        properties,
+        savingsAccounts,
+        savingsHistory,
+        debts,
+        debtTransactions,
+        debtHistory,
+        pensions,
+        pensionHistory,
+      });
+    }, 250);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [
+    budgets,
+    currentUserId,
+    debtHistory,
+    debtTransactions,
+    debts,
+    entries,
+    expenses,
+    hydrated,
+    mortgagePayments,
+    mortgages,
+    pensionHistory,
+    pensions,
+    pots,
+    properties,
+    salaryHistory,
+    savings,
+    savingsAccounts,
+    savingsHistory,
+    sources,
+  ]);
+
+  const legacyMigrationRecordCount = legacyMigrationData ? countPersistedRecords(legacyMigrationData) : 0;
+  const legacyMigrationAvailable = Boolean(
+    currentUserId
+    && hydrated
+    && legacyMigrationData
+    && !legacyMigrationDismissed
+    && legacyMigrationRecordCount > 0,
+  );
+
+  async function importLegacyLocalData(): Promise<void> {
+    if (!currentUserId || !legacyMigrationData || legacyMigrationInProgress) return;
+
+    setLegacyMigrationInProgress(true);
+    try {
+      await savePersistedAppData(legacyMigrationData);
+      applySnapshotToState(legacyMigrationData, {
+        setBudgets,
+        setSources,
+        setEntries,
+        setSalaryHistory,
+        setPots,
+        setExpenses,
+        setSavings,
+        setMortgages,
+        setMortgagePayments,
+        setProperties,
+        setSavingsAccounts,
+        setSavingsHistory,
+        setDebts,
+        setDebtTransactions,
+        setDebtHistory,
+        setPensions,
+        setPensionHistory,
+      });
+      if (legacyMigrationImportedKey) {
+        saveLocalValue(legacyMigrationImportedKey, true);
+      }
+      if (legacyMigrationDismissedKey) {
+        removeLocalValue(legacyMigrationDismissedKey);
+      }
+      setLegacyMigrationData(null);
+      setLegacyMigrationDismissed(true);
+      setLegacyMigrationRequiresConfirmation(false);
+    } finally {
+      setLegacyMigrationInProgress(false);
+    }
+  }
+
+  function dismissLegacyMigration(): void {
+    if (legacyMigrationDismissedKey) {
+      saveLocalValue(legacyMigrationDismissedKey, true);
+    }
+    setLegacyMigrationDismissed(true);
+  }
 
   const store: AppStore = {
     hydrated,
     currentUserId,
     accessibleUsers,
+    legacyMigrationAvailable,
+    legacyMigrationRequiresConfirmation,
+    legacyMigrationInProgress,
+    legacyMigrationRecordCount,
+    importLegacyLocalData,
+    dismissLegacyMigration,
 
     // Budget
     budgets: visibleBudgets, activeBudgetMonth,

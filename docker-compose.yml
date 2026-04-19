@@ -22,7 +22,4 @@ services:
       SMTP_FROM: ${SMTP_FROM:-}
       NEXT_SERVER_ACTIONS_ENCRYPTION_KEY: ${NEXT_SERVER_ACTIONS_ENCRYPTION_KEY:-}
     volumes:
-      - wealth_portal_data:/app/.data
-
-volumes:
-  wealth_portal_data:
+      - ./.data:/app/.data

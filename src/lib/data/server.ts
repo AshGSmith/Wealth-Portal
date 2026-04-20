@@ -18,6 +18,7 @@ import type {
   Property,
   SalaryHistory,
   Saving,
+  SavingAmountHistory,
   SavingsAccount,
   SavingsHistory,
 } from '@/lib/types';
@@ -37,6 +38,7 @@ export interface PersistedAppData {
   pots: Pot[];
   expenses: Expense[];
   savings: Saving[];
+  savingAmountHistory: SavingAmountHistory[];
   mortgages: Mortgage[];
   mortgagePayments: MortgagePayment[];
   properties: Property[];
@@ -82,6 +84,7 @@ export function emptyPersistedAppData(): PersistedAppData {
     pots: [],
     expenses: [],
     savings: [],
+    savingAmountHistory: [],
     mortgages: [],
     mortgagePayments: [],
     properties: [],
@@ -110,6 +113,7 @@ export function normalizePersistedAppData(value: unknown): PersistedAppData {
     pots: readArray<Pot>(raw.pots),
     expenses: readArray<Expense>(raw.expenses),
     savings: readArray<Saving>(raw.savings),
+    savingAmountHistory: readArray<SavingAmountHistory>(raw.savingAmountHistory),
     mortgages: readArray<Mortgage>(raw.mortgages),
     mortgagePayments: readArray<MortgagePayment>(raw.mortgagePayments),
     properties: readArray<Property>(raw.properties),
@@ -205,6 +209,7 @@ function mergeLinkedRecords<T extends { id: string }, P extends string>(
   currentParentIds: Set<P>,
 ): T[] {
   const preserved = current.filter(record => !currentParentIds.has((record as Record<string, unknown>).incomeSourceId as P)
+    && !currentParentIds.has((record as Record<string, unknown>).savingId as P)
     && !currentParentIds.has((record as Record<string, unknown>).mortgageId as P)
     && !currentParentIds.has((record as Record<string, unknown>).savingsAccountId as P)
     && !currentParentIds.has((record as Record<string, unknown>).debtId as P)
@@ -270,6 +275,7 @@ export function filterPersistedAppDataForUser(
   const potIds = new Set(pots.map(pot => pot.id as string));
   const expenses = filterOwnedRecords(data.expenses, accessibleUserIds).filter(expense => potIds.has(expense.potId as string));
   const savings = filterOwnedRecords(data.savings, accessibleUserIds).filter(saving => potIds.has(saving.potId as string));
+  const visibleSavingIds = new Set(savings.map(saving => saving.id as string));
   const mortgages = filterOwnedRecords(data.mortgages, accessibleUserIds);
   const mortgageIds = new Set(mortgages.map(mortgage => mortgage.id as string));
   const properties = filterOwnedRecords(data.properties, accessibleUserIds).filter(property => !property.mortgageId || mortgageIds.has(property.mortgageId as string));
@@ -293,6 +299,7 @@ export function filterPersistedAppDataForUser(
     pots,
     expenses,
     savings,
+    savingAmountHistory: data.savingAmountHistory.filter(entry => visibleSavingIds.has(entry.savingId as string)),
     mortgages,
     mortgagePayments: data.mortgagePayments.filter(payment => mortgageIds.has(payment.mortgageId as string)),
     properties,
@@ -313,6 +320,7 @@ export function savePersistedAppDataForUser(
   const current = getPersistedAppData();
 
   const visibleSourceIds = new Set(nextVisibleData.sources.map(source => source.id as string));
+  const visibleSavingIds = new Set(nextVisibleData.savings.map(saving => saving.id as string));
   const visibleMortgageIds = new Set(nextVisibleData.mortgages.map(mortgage => mortgage.id as string));
   const visibleSavingsAccountIds = new Set(nextVisibleData.savingsAccounts.map(account => account.id as string));
   const visibleDebtIds = new Set(nextVisibleData.debts.map(debt => debt.id as string));
@@ -326,6 +334,7 @@ export function savePersistedAppDataForUser(
     pots: mergeOwnedRecords(current.pots, nextVisibleData.pots, accessibleUserIds),
     expenses: mergeOwnedRecords(current.expenses, nextVisibleData.expenses, accessibleUserIds),
     savings: mergeOwnedRecords(current.savings, nextVisibleData.savings, accessibleUserIds),
+    savingAmountHistory: mergeLinkedRecords(current.savingAmountHistory, nextVisibleData.savingAmountHistory, visibleSavingIds),
     mortgages: mergeOwnedRecords(current.mortgages, nextVisibleData.mortgages, accessibleUserIds),
     mortgagePayments: mergeLinkedRecords(current.mortgagePayments, nextVisibleData.mortgagePayments, visibleMortgageIds),
     properties: mergeOwnedRecords(current.properties, nextVisibleData.properties, accessibleUserIds),

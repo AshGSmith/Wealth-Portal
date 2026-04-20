@@ -1,4 +1,4 @@
-import type { Expense, Saving, PotId, IncomeSourceId } from './types';
+import type { Expense, Saving, SavingAmountHistory, PotId, IncomeSourceId } from './types';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -99,6 +99,7 @@ export function resolveItemsForMonth(
   month: string,
   expenses: Expense[],
   savings:  Saving[],
+  savingAmountHistory: SavingAmountHistory[] = [],
 ): ResolvedLineItem[] {
   const out: ResolvedLineItem[] = [];
 
@@ -109,6 +110,7 @@ export function resolveItemsForMonth(
 
   for (const s of savings) {
     if (!s.archived && isActiveInMonth(s, month)) {
+      const effectiveAmount = savingAmountForMonth(s, savingAmountHistory, month);
       out.push({
         id:           `saving-${s.id}`,
         sourceType:   'saving',
@@ -118,7 +120,7 @@ export function resolveItemsForMonth(
         ownerUserIds: s.ownerUserIds,
         defaultOwnerUserIds: s.ownerUserIds,
         name:         s.name,
-        amount:       s.amount,
+        amount:       effectiveAmount,
         potId:        s.potId,
         defaultPotId: s.potId,
         isCritical:   s.isCritical,
@@ -133,9 +135,10 @@ export function createBudget(
   month: string,
   expenses: Expense[],
   savings:  Saving[],
+  savingAmountHistory: SavingAmountHistory[] = [],
 ): LocalBudget {
   const preparedExpenses = applyPendingOneOffExpensesToBudgetMonth(month, expenses);
-  const items = resolveItemsForMonth(month, preparedExpenses, savings);
+  const items = resolveItemsForMonth(month, preparedExpenses, savings, savingAmountHistory);
 
   return {
     id:       `budget-${Date.now()}`,
@@ -151,11 +154,13 @@ export function refreshBudget(
   budget: LocalBudget,
   expenses: Expense[],
   savings: Saving[],
+  savingAmountHistory: SavingAmountHistory[] = [],
 ): LocalBudget {
   const nextResolvedItems = resolveItemsForMonth(
     budget.month,
     applyPendingOneOffExpensesToBudgetMonth(budget.month, expenses),
     savings,
+    savingAmountHistory,
   );
   const existingItemsById = new Map(budget.items.map(item => [item.id, item]));
 
@@ -177,6 +182,19 @@ export function refreshBudget(
       return existingItem?.ownerUserIds ?? item.ownerUserIds;
     }))],
   };
+}
+
+export function savingAmountForMonth(
+  saving: Saving,
+  history: SavingAmountHistory[],
+  month: string,
+): number {
+  const match = history
+    .filter(entry => entry.savingId === saving.id && entry.effectiveDate.slice(0, 7) <= month)
+    .sort((a, b) => a.effectiveDate.localeCompare(b.effectiveDate))
+    .at(-1);
+
+  return match?.amount ?? saving.amount;
 }
 
 export function sanitizeBudgetForOneOffExpenses(

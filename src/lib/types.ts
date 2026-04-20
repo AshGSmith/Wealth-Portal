@@ -8,6 +8,7 @@ type Brand<T, B extends string> = T & { readonly __brand: B };
 export type BudgetId           = Brand<string, 'BudgetId'>;
 export type ExpenseId          = Brand<string, 'ExpenseId'>;
 export type SavingId           = Brand<string, 'SavingId'>;
+export type SavingAmountHistoryId = Brand<string, 'SavingAmountHistoryId'>;
 export type PotId              = Brand<string, 'PotId'>;
 export type IncomeSourceId     = Brand<string, 'IncomeSourceId'>;
 export type IncomeEntryId      = Brand<string, 'IncomeEntryId'>;
@@ -132,6 +133,18 @@ export interface Expense extends LineItem {
  */
 export interface Saving extends LineItem {
   id: SavingId;
+}
+
+/**
+ * A dated amount change for a Saving.
+ * The most recent effective record on or before a budget month overrides the
+ * Saving's base/default amount for that month.
+ */
+export interface SavingAmountHistory {
+  id: SavingAmountHistoryId;
+  savingId: SavingId;
+  amount: number;
+  effectiveDate: ISODate;
 }
 
 // ─── Relationships (summary) ─────────────────────────────────────────────────

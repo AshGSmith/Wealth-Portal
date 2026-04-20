@@ -10,7 +10,7 @@ import {
   type LocalBudget,
 } from '@/lib/budgetLogic';
 import type {
-  IncomeSource, IncomeEntry, Pot, Expense, Saving, SalaryHistory,
+  IncomeSource, IncomeEntry, Pot, Expense, Saving, SalaryHistory, SavingAmountHistory,
   Mortgage, MortgagePayment, Property,
   SavingsAccount, SavingsHistory,
   Debt, DebtHistory, DebtTransaction,
@@ -37,6 +37,7 @@ const STORAGE_KEYS = [
   'wmp:pots',
   'wmp:expenses',
   'wmp:savings',
+  'wmp:savingAmountHistory',
   'wmp:mortgages',
   'wmp:mortgagePayments',
   'wmp:properties',
@@ -107,6 +108,7 @@ function emptyPersistedAppData(): PersistedAppData {
     pots: [],
     expenses: [],
     savings: [],
+    savingAmountHistory: [],
     mortgages: [],
     mortgagePayments: [],
     properties: [],
@@ -150,6 +152,7 @@ interface AppStore {
   pots:              Pot[];
   expenses:          Expense[];
   savings:           Saving[];
+  savingAmountHistory: SavingAmountHistory[];
 
   upsertBudget:         (b: LocalBudget) => void;
   createBudgetForMonth: (month: string) => void;
@@ -168,6 +171,8 @@ interface AppStore {
   upsertPot:     (p: Pot)          => void;
   upsertExpense: (e: Expense)      => void;
   upsertSaving:  (s: Saving)       => void;
+  upsertSavingAmountHistory: (h: SavingAmountHistory) => void;
+  removeSavingAmountHistory: (id: string) => void;
 
   setSourceArchived:  (id: string, archived: boolean) => void;
   removeEntry:        (id: string) => void;
@@ -556,6 +561,7 @@ function normalizePersistedDataSnapshot(
     pots: normalizedPots,
     expenses: migratedIncomeData.expenses,
     savings: migratedIncomeData.savings,
+    savingAmountHistory: snapshot.savingAmountHistory,
     mortgages: snapshot.mortgages.map(mortgage => normalizeMortgage(mortgage, fallbackUserId)),
     mortgagePayments: snapshot.mortgagePayments,
     properties: snapshot.properties.map(property => normalizeProperty(property, fallbackUserId)),
@@ -579,6 +585,7 @@ function loadLegacyLocalAppData(fallbackUserId: string | null): PersistedAppData
     pots: load('wmp:pots', emptyData.pots),
     expenses: load('wmp:expenses', emptyData.expenses),
     savings: load('wmp:savings', emptyData.savings),
+    savingAmountHistory: load('wmp:savingAmountHistory', emptyData.savingAmountHistory),
     mortgages: load('wmp:mortgages', emptyData.mortgages),
     mortgagePayments: load('wmp:mortgagePayments', emptyData.mortgagePayments),
     properties: load('wmp:properties', emptyData.properties),
@@ -635,6 +642,7 @@ function applySnapshotToState(
     setPots: (value: Pot[]) => void;
     setExpenses: (value: Expense[]) => void;
     setSavings: (value: Saving[]) => void;
+    setSavingAmountHistory: (value: SavingAmountHistory[]) => void;
     setMortgages: (value: Mortgage[]) => void;
     setMortgagePayments: (value: MortgagePayment[]) => void;
     setProperties: (value: Property[]) => void;
@@ -654,6 +662,7 @@ function applySnapshotToState(
   setters.setPots(snapshot.pots);
   setters.setExpenses(snapshot.expenses);
   setters.setSavings(snapshot.savings);
+  setters.setSavingAmountHistory(snapshot.savingAmountHistory);
   setters.setMortgages(snapshot.mortgages);
   setters.setMortgagePayments(snapshot.mortgagePayments);
   setters.setProperties(snapshot.properties);
@@ -690,6 +699,7 @@ export function AppProvider({
   const [pots,              setPots]              = useState<Pot[]>         (initialData.pots);
   const [expenses,          setExpenses]          = useState<Expense[]>     (initialData.expenses);
   const [savings,           setSavings]           = useState<Saving[]>      (initialData.savings);
+  const [savingAmountHistory, setSavingAmountHistory] = useState<SavingAmountHistory[]>(initialData.savingAmountHistory);
 
   // Wealth state
   const [mortgages,        setMortgages]        = useState<Mortgage[]>       (initialData.mortgages);
@@ -729,6 +739,7 @@ export function AppProvider({
             setPots,
             setExpenses,
             setSavings,
+            setSavingAmountHistory,
             setMortgages,
             setMortgagePayments,
             setProperties,
@@ -769,6 +780,7 @@ export function AppProvider({
           setPots,
           setExpenses,
           setSavings,
+          setSavingAmountHistory,
           setMortgages,
           setMortgagePayments,
           setProperties,
@@ -799,6 +811,7 @@ export function AppProvider({
           setPots,
           setExpenses,
           setSavings,
+          setSavingAmountHistory,
           setMortgages,
           setMortgagePayments,
           setProperties,
@@ -832,6 +845,8 @@ export function AppProvider({
   const visiblePotIds = new Set(visiblePots.map(pot => pot.id as string));
   const visibleExpenses = filterOwnedRecords(expenses, accessibleUserIds).filter(expense => visiblePotIds.has(expense.potId as string));
   const visibleSavings = filterOwnedRecords(savings, accessibleUserIds).filter(saving => visiblePotIds.has(saving.potId as string));
+  const visibleSavingIds = new Set(visibleSavings.map(saving => saving.id as string));
+  const visibleSavingAmountHistory = savingAmountHistory.filter(entry => visibleSavingIds.has(entry.savingId as string));
   const visibleMortgages = filterOwnedRecords(mortgages, accessibleUserIds);
   const visibleMortgageIds = new Set(visibleMortgages.map(mortgage => mortgage.id as string));
   const visibleMortgagePayments = mortgagePayments.filter(payment => visibleMortgageIds.has(payment.mortgageId as string));
@@ -876,6 +891,7 @@ export function AppProvider({
         pots,
         expenses,
         savings,
+        savingAmountHistory,
         mortgages,
         mortgagePayments,
         properties,
@@ -909,6 +925,7 @@ export function AppProvider({
     properties,
     salaryHistory,
     savings,
+    savingAmountHistory,
     savingsAccounts,
     savingsHistory,
     sources,
@@ -937,6 +954,7 @@ export function AppProvider({
         setPots,
         setExpenses,
         setSavings,
+        setSavingAmountHistory,
         setMortgages,
         setMortgagePayments,
         setProperties,
@@ -988,6 +1006,7 @@ export function AppProvider({
     pots: visiblePots,
     expenses: visibleExpenses,
     savings: visibleSavings,
+    savingAmountHistory: visibleSavingAmountHistory,
 
     upsertBudget: b => setBudgets(prev => {
       const nextBudget = sanitizeBudgetForOneOffExpenses(b, visibleExpenses);
@@ -1009,7 +1028,7 @@ export function AppProvider({
       setExpenses(nextExpenses);
       setBudgets(prev => {
         const budget = sanitizeBudgetForOneOffExpenses(
-          createBudget(month, visibleNextExpenses, visibleSavings),
+          createBudget(month, visibleNextExpenses, visibleSavings, visibleSavingAmountHistory),
           visibleNextExpenses,
         );
         const idx = prev.findIndex(x => x.month === month);
@@ -1031,7 +1050,7 @@ export function AppProvider({
       setBudgets(prev => prev.map(budget => {
         if (budget.month !== month) return budget;
         return sanitizeBudgetForOneOffExpenses(
-          refreshBudget(budget, visibleNextExpenses, visibleSavings),
+          refreshBudget(budget, visibleNextExpenses, visibleSavings, visibleSavingAmountHistory),
           visibleNextExpenses,
         );
       }));
@@ -1104,6 +1123,8 @@ export function AppProvider({
       ...s,
       ownerUserIds: normalizeOwnerUserIds(s.ownerUserIds, currentUserId),
     })),
+    upsertSavingAmountHistory: h => setSavingAmountHistory(prev => upsert(prev, h)),
+    removeSavingAmountHistory: id => setSavingAmountHistory(prev => prev.filter(entry => entry.id !== id)),
 
     setSourceArchived:  (id, v) => setSources(prev  => setArchived(prev, id, v)),
     removeEntry:        id      => setEntries(prev   => prev.filter(e => e.id !== id)),

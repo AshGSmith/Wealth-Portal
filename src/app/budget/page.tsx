@@ -13,7 +13,7 @@ import { INCOME_SOURCE_COLOURS } from '@/lib/constants';
 import { downloadReportNodeAsPdf } from '@/components/reports/reportExport';
 import { useStore } from '@/lib/store';
 import { calcBudget, getSourceCalcsForPot } from '@/lib/budgetCalc';
-import type { PotId } from '@/lib/types';
+import type { IncomeSourceId, PotId } from '@/lib/types';
 import { fmtCurrency, fmtMonth } from '@/lib/format';
 
 function shiftMonth(ym: string, delta: number): string {
@@ -29,6 +29,7 @@ export default function BudgetPage() {
   const [selectedPotId,  setSelectedPot]  = useState<PotId | null>(null);
   const [showNewModal,   setShowNewModal]  = useState(false);
   const [showArchived,   setShowArchived]  = useState(false);
+  const [selectedIncomeSourceId, setSelectedIncomeSourceId] = useState<'all' | IncomeSourceId>('all');
 
   // After localStorage hydrates, jump to the most recent budget if the stored
   // active month has no budget (e.g. first load or stale pointer).
@@ -53,9 +54,58 @@ export default function BudgetPage() {
     ? calcBudget(activeBudget, activePots, store.sources, store.entries)
     : null;
 
-  const selectedPotCalc    = calc && selectedPotId ? calc.potCalcs.find(pc => pc.potId === selectedPotId) : null;
-  const selectedSourceCalcs = calc && selectedPotId ? getSourceCalcsForPot(calc, selectedPotId) : [];
-  const visiblePotCalcs = calc ? calc.potCalcs.filter(potCalc => potCalc.items.length > 0) : [];
+  const availableSourceCalcs = calc?.sourceCalcs ?? [];
+  const filteredCalc = calc && selectedIncomeSourceId !== 'all'
+    ? {
+        potCalcs: calc.potCalcs
+          .map(potCalc => {
+            const items = potCalc.items.filter(item => item.incomeSourceId === selectedIncomeSourceId);
+            const expenses = items.filter(item => item.sourceType === 'expense').reduce((sum, item) => sum + item.amount, 0);
+            const savings = items.filter(item => item.sourceType === 'saving').reduce((sum, item) => sum + item.amount, 0);
+            return {
+              ...potCalc,
+              items,
+              expenses,
+              savings,
+              total: expenses + savings,
+            };
+          })
+          .filter(potCalc => potCalc.items.length > 0),
+        sourceCalcs: calc.sourceCalcs.filter(sourceCalc => sourceCalc.source.id === selectedIncomeSourceId),
+        totals: {
+          income: calc.sourceCalcs
+            .filter(sourceCalc => sourceCalc.source.id === selectedIncomeSourceId)
+            .reduce((sum, sourceCalc) => sum + sourceCalc.income, 0),
+          allocated: calc.sourceCalcs
+            .filter(sourceCalc => sourceCalc.source.id === selectedIncomeSourceId)
+            .reduce((sum, sourceCalc) => sum + sourceCalc.allocated, 0),
+          balance: calc.sourceCalcs
+            .filter(sourceCalc => sourceCalc.source.id === selectedIncomeSourceId)
+            .reduce((sum, sourceCalc) => sum + sourceCalc.surplus, 0),
+        },
+      }
+    : calc;
+
+  const selectedPotCalc = filteredCalc && selectedPotId ? filteredCalc.potCalcs.find(pc => pc.potId === selectedPotId) : null;
+  const selectedSourceCalcs = filteredCalc && selectedPotId ? getSourceCalcsForPot(filteredCalc, selectedPotId) : [];
+  const visiblePotCalcs = filteredCalc ? filteredCalc.potCalcs.filter(potCalc => potCalc.items.length > 0) : [];
+
+  useEffect(() => {
+    if (!calc) {
+      setSelectedIncomeSourceId('all');
+      return;
+    }
+
+    if (selectedIncomeSourceId !== 'all' && !calc.sourceCalcs.some(sourceCalc => sourceCalc.source.id === selectedIncomeSourceId)) {
+      setSelectedIncomeSourceId('all');
+    }
+  }, [calc, selectedIncomeSourceId]);
+
+  useEffect(() => {
+    if (!selectedPotId || !filteredCalc?.potCalcs.some(potCalc => potCalc.potId === selectedPotId)) {
+      setSelectedPot(null);
+    }
+  }, [filteredCalc, selectedPotId]);
 
   // ── Handlers ─────────────────────────────────────────────────────────────
   function handleCreate(month: string) {
@@ -253,7 +303,7 @@ export default function BudgetPage() {
       )}
 
       {/* ── Budget content ── */}
-      {activeBudget && calc && (
+      {activeBudget && calc && filteredCalc && (
         <>
           <div className="pointer-events-none absolute left-[-10000px] top-0 w-[960px] opacity-0" aria-hidden="true">
             <BudgetExportDocument
@@ -264,14 +314,47 @@ export default function BudgetPage() {
             />
           </div>
 
+          {/* Source filter */}
+          {availableSourceCalcs.length > 0 && (
+            <div className="mb-3 print:hidden">
+              <div
+                className="inline-flex max-w-full items-center gap-2 rounded-xl border px-3 py-2"
+                style={{ background: 'var(--surface)', borderColor: 'var(--border)' }}
+              >
+                <label htmlFor="budget-income-source-filter" className="shrink-0 text-[11px] font-medium uppercase tracking-wide" style={{ color: 'var(--muted)' }}>
+                  Source
+                </label>
+                <select
+                  id="budget-income-source-filter"
+                  value={selectedIncomeSourceId}
+                  onChange={e => setSelectedIncomeSourceId(e.target.value as 'all' | IncomeSourceId)}
+                  className="min-w-0 rounded-lg border px-2.5 py-1.5 text-xs outline-none transition-colors"
+                  style={{
+                    background: 'var(--surface-hover)',
+                    borderColor: 'var(--border)',
+                    color: 'var(--foreground)',
+                    colorScheme: 'dark',
+                  }}
+                >
+                  <option value="all">All income sources</option>
+                  {availableSourceCalcs.map(sourceCalc => (
+                    <option key={sourceCalc.source.id} value={sourceCalc.source.id}>
+                      {sourceCalc.source.provider}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          )}
+
           {/* Summary strip */}
           <div className="mb-6 grid grid-cols-3 gap-2 print:hidden sm:gap-3">
             {[
-              { label: 'Income',    value: fmtCurrency(calc.totals.income),    colour: 'var(--foreground)' },
-              { label: 'Committed', value: fmtCurrency(calc.totals.allocated), colour: 'var(--foreground)' },
+              { label: 'Income',    value: fmtCurrency(filteredCalc.totals.income),    colour: 'var(--foreground)' },
+              { label: 'Committed', value: fmtCurrency(filteredCalc.totals.allocated), colour: 'var(--foreground)' },
               { label: 'Balance',
-                value:  (calc.totals.balance >= 0 ? '+' : '') + fmtCurrency(calc.totals.balance),
-                colour: calc.totals.balance >= 0 ? '#10b981' : '#f43f5e',
+                value:  (filteredCalc.totals.balance >= 0 ? '+' : '') + fmtCurrency(filteredCalc.totals.balance),
+                colour: filteredCalc.totals.balance >= 0 ? '#10b981' : '#f43f5e',
               },
             ].map(({ label, value, colour }) => (
               <Tile
@@ -289,9 +372,9 @@ export default function BudgetPage() {
           </div>
 
           {/* Over-allocation warnings */}
-          {calc.sourceCalcs.some(sc => sc.isOverAllocated) && (
+          {filteredCalc.sourceCalcs.some(sc => sc.isOverAllocated) && (
             <div className="mb-5 space-y-2 print:hidden">
-              {calc.sourceCalcs.filter(sc => sc.isOverAllocated).map(sc => (
+              {filteredCalc.sourceCalcs.filter(sc => sc.isOverAllocated).map(sc => (
                 <div key={sc.source.id}
                   className="flex items-center justify-between rounded-xl border px-4 py-3 text-sm"
                   style={{ borderColor: '#f59e0b44', background: '#f59e0b0d' }}>

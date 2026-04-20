@@ -3,7 +3,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: wealth-management-portal:0.1.7
+    image: wealth-management-portal:0.1.8
     container_name: wealth-management-portal
     restart: unless-stopped
     ports:

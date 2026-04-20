@@ -153,12 +153,14 @@ export function resolveItemsForMonth(
         sourceId:     s.id,
         incomeSourceId: s.incomeSourceId,
         defaultIncomeSourceId: s.incomeSourceId,
+        incomeSourceName: '',
         ownerUserIds: s.ownerUserIds,
         defaultOwnerUserIds: s.ownerUserIds,
         name:         s.name,
         amount:       effectiveAmount,
         potId:        s.potId,
         defaultPotId: s.potId,
+        potName:      '',
         isCritical:   s.isCritical,
       });
     }

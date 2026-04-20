@@ -1,4 +1,4 @@
-import type { Expense, Saving, SavingAmountHistory, PotId, IncomeSourceId } from './types';
+import type { Expense, Saving, SavingAmountHistory, PotId, IncomeSourceId, IncomeSourceType } from './types';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -8,13 +8,46 @@ export interface ResolvedLineItem {
   sourceId:     string;
   incomeSourceId: IncomeSourceId;
   defaultIncomeSourceId: IncomeSourceId;
+  incomeSourceName: string;
   ownerUserIds: string[];
   defaultOwnerUserIds: string[];
   name:         string;
   amount:       number;
   potId:        PotId;          // current assignment — may be overridden
   defaultPotId: PotId;          // original from the source record
+  potName:      string;
   isCritical:   boolean;
+}
+
+export interface LockedBudgetPotCalcSnapshot {
+  potId: string;
+  potName: string;
+  potIsBusiness: boolean;
+  total: number;
+  expenses: number;
+  savings: number;
+  items: ResolvedLineItem[];
+}
+
+export interface LockedBudgetSourceCalcSnapshot {
+  sourceId: string;
+  provider: string;
+  sourceType: IncomeSourceType;
+  income: number;
+  allocated: number;
+  isOverAllocated: boolean;
+  surplus: number;
+  potIds: string[];
+}
+
+export interface LockedBudgetSnapshot {
+  potCalcs: LockedBudgetPotCalcSnapshot[];
+  sourceCalcs: LockedBudgetSourceCalcSnapshot[];
+  totals: {
+    income: number;
+    allocated: number;
+    balance: number;
+  };
 }
 
 export interface LocalBudget {
@@ -24,6 +57,7 @@ export interface LocalBudget {
   locked:   boolean;
   ownerUserIds: string[];
   items:    ResolvedLineItem[];
+  lockedSnapshot?: LockedBudgetSnapshot | null;
 }
 
 // ─── Date helpers ─────────────────────────────────────────────────────────────
@@ -55,12 +89,14 @@ function toResolvedExpenseItem(e: Expense): ResolvedLineItem {
     sourceId:     e.id,
     incomeSourceId: e.incomeSourceId,
     defaultIncomeSourceId: e.incomeSourceId,
+    incomeSourceName: '',
     ownerUserIds: e.ownerUserIds,
     defaultOwnerUserIds: e.ownerUserIds,
     name:         e.name,
     amount:       e.amount,
     potId:        e.potId,
     defaultPotId: e.potId,
+    potName:      '',
     isCritical:   e.isCritical,
   };
 }
@@ -147,6 +183,7 @@ export function createBudget(
     locked:   false,
     ownerUserIds: [...new Set(items.flatMap(item => item.ownerUserIds))],
     items,
+    lockedSnapshot: null,
   };
 }
 
@@ -156,6 +193,10 @@ export function refreshBudget(
   savings: Saving[],
   savingAmountHistory: SavingAmountHistory[] = [],
 ): LocalBudget {
+  if (budget.locked) {
+    return budget;
+  }
+
   const nextResolvedItems = resolveItemsForMonth(
     budget.month,
     applyPendingOneOffExpensesToBudgetMonth(budget.month, expenses),
@@ -181,6 +222,7 @@ export function refreshBudget(
       const existingItem = existingItemsById.get(item.id);
       return existingItem?.ownerUserIds ?? item.ownerUserIds;
     }))],
+    lockedSnapshot: budget.locked ? budget.lockedSnapshot ?? null : null,
   };
 }
 

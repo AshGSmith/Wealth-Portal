@@ -9,6 +9,7 @@ import {
   sanitizeBudgetForOneOffExpenses,
   type LocalBudget,
 } from '@/lib/budgetLogic';
+import { buildLockedBudgetSnapshot, calcBudget } from '@/lib/budgetCalc';
 import type {
   IncomeSource, IncomeEntry, Pot, Expense, Saving, SalaryHistory, SavingAmountHistory,
   Mortgage, MortgagePayment, Property,
@@ -410,27 +411,39 @@ function normalizeSavingWithSource(
 
 function normalizeBudgets(
   budgets: LocalBudget[],
+  sources: IncomeSource[],
+  pots: Pot[],
   expenses: Expense[],
   savings: Saving[],
   fallbackUserId: string | null,
 ): LocalBudget[] {
   const expenseOwners = new Map(expenses.map(expense => [expense.id as string, expense.ownerUserIds]));
   const savingOwners = new Map(savings.map(saving => [saving.id as string, saving.ownerUserIds]));
+  const sourceNames = new Map(sources.map(source => [source.id as string, source.provider]));
+  const potNames = new Map(pots.map(pot => [pot.id as string, pot.name]));
 
-  return budgets.map(budget => sanitizeBudgetForOneOffExpenses({
-    ...budget,
-    items: budget.items.map(item => {
-      const sourceOwners = item.sourceType === 'expense'
-        ? expenseOwners.get(item.sourceId)
-        : savingOwners.get(item.sourceId);
-      const ownerUserIds = normalizeOwnerUserIds(item.ownerUserIds ?? sourceOwners, fallbackUserId);
-      return {
-        ...item,
-        ownerUserIds,
-        defaultOwnerUserIds: normalizeOwnerUserIds(item.defaultOwnerUserIds ?? sourceOwners ?? ownerUserIds, fallbackUserId),
-      };
-    }),
-  }, expenses));
+  return budgets.map(budget => {
+    const normalizedBudget = {
+      ...budget,
+      items: budget.items.map(item => {
+        const sourceOwners = item.sourceType === 'expense'
+          ? expenseOwners.get(item.sourceId)
+          : savingOwners.get(item.sourceId);
+        const ownerUserIds = normalizeOwnerUserIds(item.ownerUserIds ?? sourceOwners, fallbackUserId);
+        return {
+          ...item,
+          ownerUserIds,
+          defaultOwnerUserIds: normalizeOwnerUserIds(item.defaultOwnerUserIds ?? sourceOwners ?? ownerUserIds, fallbackUserId),
+          incomeSourceName: item.incomeSourceName || sourceNames.get(item.incomeSourceId as string) || '',
+          potName: item.potName || potNames.get(item.potId as string) || '',
+        };
+      }),
+    };
+
+    return normalizedBudget.locked
+      ? normalizedBudget
+      : sanitizeBudgetForOneOffExpenses(normalizedBudget, expenses);
+  });
 }
 
 function normalizeMortgage(mortgage: Mortgage, fallbackUserId: string | null): Mortgage {
@@ -518,6 +531,10 @@ function syncOneOffExpenseIntoBudget(
   budget: LocalBudget,
   expense: Expense,
 ): LocalBudget {
+  if (budget.locked) {
+    return budget;
+  }
+
   const resolved = resolveExpenseForMonth(expense, budget.month);
   const itemId = `expense-${expense.id}`;
 
@@ -531,6 +548,24 @@ function syncOneOffExpenseIntoBudget(
     items: hasItem
       ? budget.items.map(item => item.id === itemId ? resolved : item)
       : [...budget.items, resolved],
+  };
+}
+
+function decorateBudgetItemsWithLabels(
+  budget: LocalBudget,
+  pots: Pot[],
+  sources: IncomeSource[],
+): LocalBudget {
+  const potNames = new Map(pots.map(pot => [pot.id as string, pot.name]));
+  const sourceNames = new Map(sources.map(source => [source.id as string, source.provider]));
+
+  return {
+    ...budget,
+    items: budget.items.map(item => ({
+      ...item,
+      potName: potNames.get(item.potId as string) ?? item.potName,
+      incomeSourceName: sourceNames.get(item.incomeSourceId as string) ?? item.incomeSourceName,
+    })),
   };
 }
 
@@ -554,7 +589,7 @@ function normalizePersistedDataSnapshot(
   );
 
   return {
-    budgets: normalizeBudgets(migratedIncomeData.budgets, migratedIncomeData.expenses, migratedIncomeData.savings, fallbackUserId),
+    budgets: normalizeBudgets(migratedIncomeData.budgets, migratedIncomeData.sources, normalizedPots, migratedIncomeData.expenses, migratedIncomeData.savings, fallbackUserId),
     sources: migratedIncomeData.sources,
     entries: migratedIncomeData.entries,
     salaryHistory: migratedIncomeData.salaryHistory,
@@ -866,7 +901,7 @@ export function AppProvider({
       ...budget,
       items: budget.items.filter(item =>
         isRecordVisible({ ownerUserIds: normalizeOwnerUserIds(item.ownerUserIds, currentUserId) }, accessibleUserIds)
-        && visiblePotIds.has(item.potId as string)
+        && (budget.locked || visiblePotIds.has(item.potId as string))
       ),
     }))
     .filter(budget =>
@@ -1009,7 +1044,11 @@ export function AppProvider({
     savingAmountHistory: visibleSavingAmountHistory,
 
     upsertBudget: b => setBudgets(prev => {
-      const nextBudget = sanitizeBudgetForOneOffExpenses(b, visibleExpenses);
+      const nextBudget = decorateBudgetItemsWithLabels(
+        sanitizeBudgetForOneOffExpenses(b, visibleExpenses),
+        visiblePots,
+        visibleSources,
+      );
       const idx = prev.findIndex(x => x.month === b.month);
       return idx >= 0
         ? prev.map(x => x.month === b.month ? nextBudget : x)
@@ -1027,9 +1066,13 @@ export function AppProvider({
       );
       setExpenses(nextExpenses);
       setBudgets(prev => {
-        const budget = sanitizeBudgetForOneOffExpenses(
-          createBudget(month, visibleNextExpenses, visibleSavings, visibleSavingAmountHistory),
-          visibleNextExpenses,
+        const budget = decorateBudgetItemsWithLabels(
+          sanitizeBudgetForOneOffExpenses(
+            createBudget(month, visibleNextExpenses, visibleSavings, visibleSavingAmountHistory),
+            visibleNextExpenses,
+          ),
+          visiblePots,
+          visibleSources,
         );
         const idx = prev.findIndex(x => x.month === month);
         return idx >= 0 ? prev.map(x => x.month === month ? budget : x) : [...prev, budget];
@@ -1049,28 +1092,53 @@ export function AppProvider({
       setExpenses(nextExpenses);
       setBudgets(prev => prev.map(budget => {
         if (budget.month !== month) return budget;
-        return sanitizeBudgetForOneOffExpenses(
-          refreshBudget(budget, visibleNextExpenses, visibleSavings, visibleSavingAmountHistory),
-          visibleNextExpenses,
+        if (budget.locked) return budget;
+        return decorateBudgetItemsWithLabels(
+          sanitizeBudgetForOneOffExpenses(
+            refreshBudget(budget, visibleNextExpenses, visibleSavings, visibleSavingAmountHistory),
+            visibleNextExpenses,
+          ),
+          visiblePots,
+          visibleSources,
         );
       }));
     },
     moveBudgetItem: (month, itemId, newPotId) => setBudgets(prev =>
       prev.map(b => b.month !== month ? b : {
         ...b,
-        items: b.items.map(i => i.id === itemId ? { ...i, potId: newPotId } : i),
+        items: b.items.map(i => i.id === itemId ? {
+          ...i,
+          potId: newPotId,
+          potName: visiblePots.find(pot => pot.id === newPotId)?.name ?? i.potName,
+        } : i),
       })
     ),
     setBudgetItemIncomeSource: (month, itemId, incomeSourceId) => setBudgets(prev =>
       prev.map(b => b.month !== month ? b : {
         ...b,
-        items: b.items.map(i => i.id === itemId ? { ...i, incomeSourceId: incomeSourceId as typeof i.incomeSourceId } : i),
+        items: b.items.map(i => i.id === itemId ? {
+          ...i,
+          incomeSourceId: incomeSourceId as typeof i.incomeSourceId,
+          incomeSourceName: visibleSources.find(source => source.id === incomeSourceId)?.provider ?? i.incomeSourceName,
+        } : i),
       })
     ),
     setActiveBudgetMonth: month => setActiveBudgetMonth(month),
     deleteBudget:      month => setBudgets(prev => prev.filter(b => b.month !== month)),
     setBudgetArchived: (month, v) => setBudgets(prev => prev.map(b => b.month !== month ? b : { ...b, archived: v })),
-    setBudgetLocked:   (month, v) => setBudgets(prev => prev.map(b => b.month !== month ? b : { ...b, locked: v })),
+    setBudgetLocked:   (month, v) => setBudgets(prev => prev.map(b => {
+      if (b.month !== month) return b;
+      if (!v) return { ...b, locked: false, lockedSnapshot: null };
+
+      const decorated = decorateBudgetItemsWithLabels(b, visiblePots, visibleSources);
+      return {
+        ...decorated,
+        locked: true,
+        lockedSnapshot: buildLockedBudgetSnapshot(
+          calcBudget(decorated, visiblePots, visibleSources, visibleEntries),
+        ),
+      };
+    })),
 
     upsertSource:  s  => setSources(prev  => upsert(prev, normalizeIncomeSource(s, currentUserId))),
     upsertEntry:   e  => setEntries(prev  => upsert(prev, e)),
@@ -1103,18 +1171,18 @@ export function AppProvider({
       if (nextExpense.oneOffPayment && nextExpense.oneOffAppliedBudgetMonth) {
         setBudgets(prev => prev.map(budget =>
           budget.month === nextExpense.oneOffAppliedBudgetMonth
-            ? syncOneOffExpenseIntoBudget(budget, nextExpense)
+            ? decorateBudgetItemsWithLabels(syncOneOffExpenseIntoBudget(budget, nextExpense), visiblePots, visibleSources)
             : budget
         ));
       } else if (existing?.oneOffPayment && existing.oneOffAppliedBudgetMonth) {
         const appliedMonth = existing.oneOffAppliedBudgetMonth;
         setBudgets(prev => prev.map(budget =>
           budget.month === appliedMonth
-            ? syncOneOffExpenseIntoBudget(budget, {
+            ? decorateBudgetItemsWithLabels(syncOneOffExpenseIntoBudget(budget, {
                 ...nextExpense,
                 oneOffPayment: true,
                 oneOffAppliedBudgetMonth: appliedMonth,
-              })
+              }), visiblePots, visibleSources)
             : budget
         ));
       }

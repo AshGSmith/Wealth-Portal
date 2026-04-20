@@ -1,5 +1,9 @@
 import type { Pot, IncomeSource, IncomeEntry } from './types';
-import type { LocalBudget, ResolvedLineItem } from './budgetLogic';
+import type {
+  LocalBudget,
+  LockedBudgetSnapshot,
+  ResolvedLineItem,
+} from './budgetLogic';
 
 // ─── Output types ─────────────────────────────────────────────────────────────
 
@@ -46,6 +50,41 @@ export interface BudgetSpendingBreakdown {
   nonCriticalSavings: number;
 }
 
+function materializeLockedSnapshot(snapshot: LockedBudgetSnapshot): BudgetCalc {
+  return {
+    potCalcs: snapshot.potCalcs.map(potCalc => ({
+      potId: potCalc.potId,
+      pot: {
+        id: potCalc.potId as Pot['id'],
+        name: potCalc.potName,
+        isBusiness: potCalc.potIsBusiness,
+        ownerUserIds: [],
+        archived: false,
+      },
+      total: potCalc.total,
+      expenses: potCalc.expenses,
+      savings: potCalc.savings,
+      items: potCalc.items,
+    })),
+    sourceCalcs: snapshot.sourceCalcs.map(sourceCalc => ({
+      source: {
+        id: sourceCalc.sourceId as IncomeSource['id'],
+        type: sourceCalc.sourceType,
+        provider: sourceCalc.provider,
+        startingAnnualSalary: null,
+        ownerUserIds: [],
+        archived: false,
+      },
+      income: sourceCalc.income,
+      allocated: sourceCalc.allocated,
+      isOverAllocated: sourceCalc.isOverAllocated,
+      surplus: sourceCalc.surplus,
+      potIds: sourceCalc.potIds,
+    })),
+    totals: snapshot.totals,
+  };
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 /** Sum IncomeEntry amounts for one source in one YYYY-MM month. */
@@ -63,6 +102,10 @@ export function calcBudget(
   sources: IncomeSource[],
   entries: IncomeEntry[],
 ): BudgetCalc {
+  if (budget.locked && budget.lockedSnapshot) {
+    return materializeLockedSnapshot(budget.lockedSnapshot);
+  }
+
   // 1. Group items by potId
   const byPot = new Map<string, ResolvedLineItem[]>();
   for (const item of budget.items) {
@@ -272,4 +315,29 @@ export function getPotCalc(calc: BudgetCalc, potId: string): PotCalc | undefined
 
 export function getSourceCalcsForPot(calc: BudgetCalc, potId: string): SourceCalc[] {
   return calc.sourceCalcs.filter(sc => sc.potIds.includes(potId));
+}
+
+export function buildLockedBudgetSnapshot(calc: BudgetCalc): LockedBudgetSnapshot {
+  return {
+    potCalcs: calc.potCalcs.map(potCalc => ({
+      potId: potCalc.potId,
+      potName: potCalc.pot.name,
+      potIsBusiness: potCalc.pot.isBusiness,
+      total: potCalc.total,
+      expenses: potCalc.expenses,
+      savings: potCalc.savings,
+      items: potCalc.items,
+    })),
+    sourceCalcs: calc.sourceCalcs.map(sourceCalc => ({
+      sourceId: sourceCalc.source.id,
+      provider: sourceCalc.source.provider,
+      sourceType: sourceCalc.source.type,
+      income: sourceCalc.income,
+      allocated: sourceCalc.allocated,
+      isOverAllocated: sourceCalc.isOverAllocated,
+      surplus: sourceCalc.surplus,
+      potIds: sourceCalc.potIds,
+    })),
+    totals: calc.totals,
+  };
 }

@@ -7,7 +7,15 @@ import NetWorthTile from '@/components/ui/NetWorthTile';
 import Tile from '@/components/ui/Tile';
 import { fmtCurrency } from '@/lib/format';
 import { useStore } from '@/lib/store';
-import { mortgageBalance, mortgageLiability, useWealthCalc } from '@/lib/wealthCalc';
+import { isMortgageCurrentAsOf, isPropertyCurrentAsOf, mortgageBalance, mortgageLiability, useWealthCalc } from '@/lib/wealthCalc';
+
+function currentIsoDate(): string {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
 
 function fmtPercent(value: number): string {
   return `${(value * 100).toFixed(2)}%`;
@@ -83,11 +91,12 @@ function SectionCard({ title, total, totalColor, emptyLabel, children }: Section
 export default function NetWorthReportPage() {
   const totals = useWealthCalc();
   const store = useStore();
+  const todayIso = currentIsoDate();
 
-  const properties = store.properties.filter(property => !property.archived);
+  const properties = store.properties.filter(property => isPropertyCurrentAsOf(property, todayIso));
   const savingsAccounts = store.savingsAccounts.filter(account => !account.archived);
   const pensions = store.pensions.filter(pension => !pension.archived);
-  const mortgages = store.mortgages.filter(mortgage => !mortgage.archived);
+  const mortgages = store.mortgages.filter(mortgage => isMortgageCurrentAsOf(mortgage, todayIso));
   const debts = store.debts.filter(debt => !debt.archived);
 
   return (

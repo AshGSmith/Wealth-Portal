@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import {
   Plus, Pencil, Archive, ArchiveRestore,
-  ChevronDown, ChevronRight, ChevronUp,
+  ChevronDown, ChevronRight,
 } from 'lucide-react';
 import PageHeader from '@/components/layout/PageHeader';
 import SourceForm from '@/components/income/SourceForm';
@@ -25,9 +25,7 @@ type SalaryModal =
 export default function IncomePage() {
   const store = useStore();
 
-  const [expanded, setExpanded] = useState<Set<string>>(
-    () => new Set(store.sources.map(s => s.id))
-  );
+  const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
   const [showArchived, setShowArchived] = useState(false);
   const [sourceModal, setSourceModal]   = useState<IncomeSource | null | false>(false);
   const [entryModal, setEntryModal]     = useState<EntryModal | null>(null);
@@ -228,6 +226,12 @@ function SourceCard({
   const salaryEnabled = isSalarySource(source);
   const latestSalary = latestAnnualSalary(source, salaryHistory);
   const ownership = ownershipSummary(source.ownerUserIds, accessibleUsers);
+  const latestEntry = [...entries].sort((a, b) => b.date.localeCompare(a.date))[0] ?? null;
+  const summaryValue = entries.length > 0
+    ? fmtCurrency(total)
+    : salaryEnabled && latestSalary !== null
+      ? fmtCurrency(latestSalary)
+      : '—';
 
   return (
     <div
@@ -240,24 +244,40 @@ function SourceCard({
         onClick={onToggle}
       >
         <span style={{ color: 'var(--muted)' }}>
-          {expanded ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
+          {expanded ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
         </span>
 
         <div className="flex-1 min-w-0">
           <p className="text-sm font-semibold truncate" style={{ color: 'var(--foreground)' }}>
             {source.provider}
           </p>
-          <p className="text-xs mt-0.5" style={{ color: 'var(--muted)' }}>
-            {fmtSourceType(source.type)} · {entries.length} {entries.length === 1 ? 'entry' : 'entries'}
-            {salaryEnabled && latestSalary !== null ? ` · Salary ${fmtCurrency(latestSalary)}` : ''}
-          </p>
+          <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs" style={{ color: 'var(--muted)' }}>
+            <span>{fmtSourceType(source.type)}</span>
+            <span>·</span>
+            <span>{entries.length} {entries.length === 1 ? 'entry' : 'entries'}</span>
+            {salaryEnabled && latestSalary !== null && (
+              <>
+                <span>·</span>
+                <span>Salary {fmtCurrency(latestSalary)}</span>
+              </>
+            )}
+            {latestEntry && (
+              <>
+                <span>·</span>
+                <span>Latest {fmtDate(latestEntry.date)}</span>
+              </>
+            )}
+          </div>
         </div>
 
-        {entries.length > 0 && (
-          <span className="text-sm font-semibold tabular-nums shrink-0" style={{ color: 'var(--foreground)' }}>
-            {fmtCurrency(total)}
-          </span>
-        )}
+        <div className="text-right shrink-0">
+          <div className="text-sm font-semibold tabular-nums" style={{ color: 'var(--foreground)' }}>
+            {summaryValue}
+          </div>
+          <div className="text-[10px]" style={{ color: 'var(--muted)' }}>
+            {entries.length > 0 ? 'Recorded total' : salaryEnabled ? 'Current salary' : 'No entries'}
+          </div>
+        </div>
 
         <span
           className="hidden shrink-0 rounded px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide sm:inline-flex"
@@ -307,9 +327,10 @@ function SourceCard({
       {expanded && (
         <div className="border-t" style={{ borderColor: 'var(--border)' }}>
           <div className="border-b px-4 py-2" style={{ borderColor: 'var(--border)', background: 'var(--background)' }}>
-            <p className="text-[11px] font-medium uppercase tracking-wide" style={{ color: 'var(--muted)' }}>
-              {ownership.label} source
-            </p>
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px]" style={{ color: 'var(--muted)' }}>
+              <span className="font-medium uppercase tracking-wide">{ownership.label} source</span>
+              <span>{ownership.detail}</span>
+            </div>
           </div>
           {salaryEnabled && (
             <div className="border-b px-4 py-3 space-y-3" style={{ borderColor: 'var(--border)', background: 'var(--surface-hover)' }}>

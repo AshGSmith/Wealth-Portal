@@ -16,7 +16,7 @@ import {
 } from '@/lib/budgetCalc';
 import { fmtCurrency, fmtMonth } from '@/lib/format';
 import { useStore } from '@/lib/store';
-import { mortgageLiability, mortgagesWithFixedTermEndingSoon, totalPropertyValue } from '@/lib/wealthCalc';
+import { isMortgageCurrentAsOf, mortgageLiability, mortgagesWithFixedTermEndingSoon, totalPropertyValue } from '@/lib/wealthCalc';
 import type { Debt, DebtHistory, Mortgage, MortgagePayment, Pension, PensionHistory, SavingsAccount, SavingsHistory } from '@/lib/types';
 
 type AlertItem = {
@@ -104,7 +104,7 @@ function mortgageLiabilitiesForMonth(
   const end = monthEnd(month);
 
   return mortgages
-    .filter(mortgage => !mortgage.archived)
+    .filter(mortgage => isMortgageCurrentAsOf(mortgage, end))
     .reduce((sum, mortgage) => {
       const paymentsToMonth = payments.filter(
         payment => payment.mortgageId === mortgage.id && payment.date <= end,
@@ -136,7 +136,7 @@ export default function DashboardPage() {
     store.sources,
     store.entries,
   );
-  const propertyAssets = totalPropertyValue(store.properties);
+  const propertyAssets = totalPropertyValue(store.properties, monthEnd(selectedMonth));
   const savingsTotal = snapshotBalanceForMonth<SavingsAccount>(
     store.savingsAccounts,
     store.savingsHistory as Array<SavingsHistory & Record<string, string | number | null | undefined>>,

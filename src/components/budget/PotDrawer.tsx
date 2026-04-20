@@ -52,12 +52,20 @@ function ItemRow({ item, allPots, allSources, locked, onMoveToPot, onMoveToIncom
             : { background: 'var(--primary-light)', color: 'var(--primary)' }}>
           {item.sourceType}
         </span>
-        <select value={item.potId} onChange={e => onMoveToPot(item.id, e.target.value)}
-          disabled={locked}
-          className="flex-1 min-w-0 rounded border py-0.5 pl-2 pr-1 text-xs outline-none transition-colors"
-          style={{ background: 'transparent', borderColor: isMoved ? 'var(--primary)' : 'var(--border)', color: 'var(--foreground)', colorScheme: 'dark' as const, opacity: locked ? 0.5 : 1 }}>
-          {allPots.filter(p => !p.archived).map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-        </select>
+        {locked ? (
+          <span
+            className="flex-1 min-w-0 rounded border px-2 py-0.5 text-xs"
+            style={{ borderColor: isMoved ? 'var(--primary)' : 'var(--border)', color: 'var(--foreground)' }}
+          >
+            {item.potName}
+          </span>
+        ) : (
+          <select value={item.potId} onChange={e => onMoveToPot(item.id, e.target.value)}
+            className="flex-1 min-w-0 rounded border py-0.5 pl-2 pr-1 text-xs outline-none transition-colors"
+            style={{ background: 'transparent', borderColor: isMoved ? 'var(--primary)' : 'var(--border)', color: 'var(--foreground)', colorScheme: 'dark' as const }}>
+            {allPots.filter(p => !p.archived).map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+          </select>
+        )}
         {isMoved && <span className="shrink-0 text-[10px] font-semibold" style={{ color: 'var(--primary)' }}>moved</span>}
       </div>
       <div className="flex items-center gap-2 mt-1.5">
@@ -65,12 +73,20 @@ function ItemRow({ item, allPots, allSources, locked, onMoveToPot, onMoveToIncom
           style={{ background: 'var(--surface-hover)', color: 'var(--muted)' }}>
           source
         </span>
-        <select value={item.incomeSourceId} onChange={e => onMoveToIncomeSource(item.id, e.target.value)}
-          disabled={locked}
-          className="flex-1 min-w-0 rounded border py-0.5 pl-2 pr-1 text-xs outline-none transition-colors"
-          style={{ background: 'transparent', borderColor: isSourceOverridden ? 'var(--primary)' : 'var(--border)', color: 'var(--foreground)', colorScheme: 'dark' as const, opacity: locked ? 0.5 : 1 }}>
-          {allSources.filter(source => !source.archived).map(source => <option key={source.id} value={source.id}>{source.provider}</option>)}
-        </select>
+        {locked ? (
+          <span
+            className="flex-1 min-w-0 rounded border px-2 py-0.5 text-xs"
+            style={{ borderColor: isSourceOverridden ? 'var(--primary)' : 'var(--border)', color: 'var(--foreground)' }}
+          >
+            {item.incomeSourceName}
+          </span>
+        ) : (
+          <select value={item.incomeSourceId} onChange={e => onMoveToIncomeSource(item.id, e.target.value)}
+            className="flex-1 min-w-0 rounded border py-0.5 pl-2 pr-1 text-xs outline-none transition-colors"
+            style={{ background: 'transparent', borderColor: isSourceOverridden ? 'var(--primary)' : 'var(--border)', color: 'var(--foreground)', colorScheme: 'dark' as const }}>
+            {allSources.filter(source => !source.archived).map(source => <option key={source.id} value={source.id}>{source.provider}</option>)}
+          </select>
+        )}
         {isSourceOverridden && <span className="shrink-0 text-[10px] font-semibold" style={{ color: 'var(--primary)' }}>override</span>}
       </div>
     </div>

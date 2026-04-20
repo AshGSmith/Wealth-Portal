@@ -55,6 +55,7 @@ export default function BudgetPage() {
 
   const selectedPotCalc    = calc && selectedPotId ? calc.potCalcs.find(pc => pc.potId === selectedPotId) : null;
   const selectedSourceCalcs = calc && selectedPotId ? getSourceCalcsForPot(calc, selectedPotId) : [];
+  const visiblePotCalcs = calc ? calc.potCalcs.filter(potCalc => potCalc.items.length > 0) : [];
 
   // ── Handlers ─────────────────────────────────────────────────────────────
   function handleCreate(month: string) {
@@ -94,34 +95,24 @@ export default function BudgetPage() {
     await downloadReportNodeAsPdf(exportRef.current, `${fmtMonth(activeMonth)} Budget`);
   }
 
-  function sourceLabelForItems(sourceIds: string[]): string {
-    const labels = sourceIds
-      .map(sourceId => store.sources.find(source => source.id === sourceId)?.provider)
-      .filter((label): label is string => Boolean(label));
-
+  function sourceLabelForCalcs(sourceCalcs: Array<{ source: { provider: string } }>): string {
+    const labels = sourceCalcs.map(sourceCalc => sourceCalc.source.provider);
     if (labels.length === 0) return 'No linked source';
     if (labels.length === 1) return labels[0];
     return `${labels[0]} +${labels.length - 1} more`;
   }
 
-  function accentColorForItems(sourceIds: string[]): string {
-    if (sourceIds.length !== 1) return '#64748b';
-    const source = store.sources.find(item => item.id === sourceIds[0]);
-    return INCOME_SOURCE_COLOURS[source?.type as keyof typeof INCOME_SOURCE_COLOURS] ?? '#64748b';
+  function accentColorForCalcs(sourceCalcs: Array<{ source: { type: string } }>): string {
+    if (sourceCalcs.length !== 1) return '#64748b';
+    return INCOME_SOURCE_COLOURS[sourceCalcs[0].source.type as keyof typeof INCOME_SOURCE_COLOURS] ?? '#64748b';
   }
 
-  function sourceBreakdownForItems(items: Array<{ incomeSourceId: string; amount: number }>) {
-    const totals = new Map<string, number>();
-
-    for (const item of items) {
-      totals.set(item.incomeSourceId, (totals.get(item.incomeSourceId) ?? 0) + item.amount);
-    }
-
-    return [...totals.entries()]
-      .map(([sourceId, amount]) => ({
-        label: store.sources.find(source => source.id === sourceId)?.provider ?? 'Unknown',
-        amount: fmtCurrency(amount),
-        rawAmount: amount,
+  function sourceBreakdownForCalcs(sourceCalcs: Array<{ source: { provider: string }; allocated: number }>) {
+    return sourceCalcs
+      .map(sourceCalc => ({
+        label: sourceCalc.source.provider,
+        amount: fmtCurrency(sourceCalc.allocated),
+        rawAmount: sourceCalc.allocated,
       }))
       .sort((a, b) => b.rawAmount - a.rawAmount)
       .map(({ label, amount }) => ({ label, amount }));
@@ -270,7 +261,6 @@ export default function BudgetPage() {
               month={activeMonth}
               budgetStatus={activeBudget.archived ? 'Archived' : isLocked ? 'Locked' : 'Active'}
               calc={calc}
-              sources={store.sources}
             />
           </div>
 
@@ -321,9 +311,8 @@ export default function BudgetPage() {
 
           {/* Pot list */}
           <div className="space-y-2 print:hidden">
-            {calc.potCalcs.map(({ pot, items }) => {
+            {visiblePotCalcs.map(({ pot, items }) => {
               const sourceCalcs  = getSourceCalcsForPot(calc, pot.id);
-              const sourceIds    = [...new Set(items.map(item => item.incomeSourceId))];
               const expenseItems = items.filter(i => i.sourceType === 'expense');
               const savingItems  = items.filter(i => i.sourceType === 'saving');
               return (
@@ -332,9 +321,9 @@ export default function BudgetPage() {
                   pot={pot}
                   expenses={expenseItems}
                   savings={savingItems}
-                  sourceLabel={sourceLabelForItems(sourceIds)}
-                  accentColor={accentColorForItems(sourceIds)}
-                  sourceBreakdown={sourceBreakdownForItems(items)}
+                  sourceLabel={sourceLabelForCalcs(sourceCalcs)}
+                  accentColor={accentColorForCalcs(sourceCalcs)}
+                  sourceBreakdown={sourceBreakdownForCalcs(sourceCalcs)}
                   isOverAllocated={sourceCalcs.some(sourceCalc => sourceCalc.isOverAllocated)}
                   onClick={() => setSelectedPot(pot.id)}
                 />
@@ -350,7 +339,7 @@ export default function BudgetPage() {
               allPots={activePots}
               allSources={store.sources}
               sourceCalcs={selectedSourceCalcs}
-              sourceLabel={sourceLabelForItems([...new Set(selectedPotCalc.items.map(item => item.incomeSourceId))])}
+              sourceLabel={sourceLabelForCalcs(selectedSourceCalcs)}
               locked={isLocked}
               open={!!selectedPotId}
               onClose={() => setSelectedPot(null)}

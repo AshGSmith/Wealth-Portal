@@ -29,6 +29,10 @@ export interface MortgageFixedTermAlert {
   daysUntilEnd: number;
 }
 
+function currentIsoDate(): string {
+  return isoDateFromLocalDate(new Date());
+}
+
 function isoDateFromLocalDate(date: Date): string {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, '0');
@@ -48,6 +52,14 @@ function addMonths(date: Date, months: number): Date {
 export function mortgageFixedTermEndDate(mortgage: Mortgage): string | null {
   if (!mortgage.startDate || !mortgage.fixedTermMonths) return null;
   return isoDateFromLocalDate(addMonths(parseIsoDate(mortgage.startDate), mortgage.fixedTermMonths));
+}
+
+export function isPropertyCurrentAsOf(property: Property, asOfIso: string): boolean {
+  return !property.archived && property.purchaseDate <= asOfIso;
+}
+
+export function isMortgageCurrentAsOf(mortgage: Mortgage, asOfIso: string): boolean {
+  return !mortgage.archived && (!mortgage.startDate || mortgage.startDate <= asOfIso);
 }
 
 export function mortgagesWithFixedTermEndingSoon(
@@ -103,9 +115,9 @@ export function mortgageLiability(mortgage: Mortgage, payments: MortgagePayment[
 }
 
 /** Sum current value across all non-archived properties. */
-export function totalPropertyValue(properties: Property[]): number {
+export function totalPropertyValue(properties: Property[], asOfIso = currentIsoDate()): number {
   return properties
-    .filter(p => !p.archived)
+    .filter(property => isPropertyCurrentAsOf(property, asOfIso))
     .reduce((s, p) => s + p.currentValue, 0);
 }
 
@@ -113,9 +125,10 @@ export function totalPropertyValue(properties: Property[]): number {
 export function totalMortgageLiabilities(
   mortgages: Mortgage[],
   payments:  MortgagePayment[],
+  asOfIso = currentIsoDate(),
 ): number {
   return mortgages
-    .filter(m => !m.archived)
+    .filter(mortgage => isMortgageCurrentAsOf(mortgage, asOfIso))
     .reduce((s, m) => s + mortgageLiability(m, payments), 0);
 }
 
@@ -170,11 +183,12 @@ export function calcWealth(
   savingsAccounts:  SavingsAccount[],
   debts:            Debt[],
   pensions:         Pension[],
+  asOfIso = currentIsoDate(),
 ): WealthCalc {
-  const propertyAssets      = totalPropertyValue(properties);
+  const propertyAssets      = totalPropertyValue(properties, asOfIso);
   const savingsAssets        = totalSavingsBalance(savingsAccounts);
   const pensionAssets        = totalPensionBalance(pensions);
-  const mortgageLiabilities  = totalMortgageLiabilities(mortgages, mortgagePayments);
+  const mortgageLiabilities  = totalMortgageLiabilities(mortgages, mortgagePayments, asOfIso);
   const debtLiabilities      = totalDebtBalance(debts);
 
   const totalAssets      = propertyAssets + savingsAssets + pensionAssets;

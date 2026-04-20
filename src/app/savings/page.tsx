@@ -239,33 +239,34 @@ function SavingRow({
   const ownership = ownershipSummary(saving.ownerUserIds, accessibleUsers);
   const activeAmount = currentAmount(saving, history);
   const hasHistory = history.length > 0;
+  const secondaryBadges = [
+    saving.isCritical ? 'Critical' : null,
+    ownership.label,
+  ].filter((value): value is string => Boolean(value));
 
   return (
     <div style={{ background: 'var(--surface)' }}>
       <div className="flex items-center px-4 py-3 gap-3">
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-1.5 min-w-0">
-            {saving.isCritical && (
+          <p
+            className="text-sm font-medium break-words"
+            style={{ color: isArchived ? 'var(--muted)' : 'var(--foreground)' }}
+          >
+            {saving.name}
+          </p>
+          <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[10px]">
+            {secondaryBadges.map(label => (
               <span
-                className="shrink-0 rounded px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide"
-                style={{ background: '#f59e0b22', color: '#f59e0b' }}
+                key={label}
+                className="rounded px-1.5 py-0.5 font-semibold uppercase tracking-wide"
+                style={label === 'Critical'
+                  ? { background: '#f59e0b22', color: '#f59e0b' }
+                  : { background: 'var(--surface-hover)', color: 'var(--muted)' }}
+                title={label === ownership.label ? ownership.detail : undefined}
               >
-                Critical
+                {label}
               </span>
-            )}
-            <span
-              className="shrink-0 rounded px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide"
-              style={{ background: 'var(--surface-hover)', color: 'var(--muted)' }}
-              title={ownership.detail}
-            >
-              {ownership.label}
-            </span>
-            <span
-              className="text-sm font-medium truncate"
-              style={{ color: isArchived ? 'var(--muted)' : 'var(--foreground)' }}
-              >
-                {saving.name}
-            </span>
+            ))}
           </div>
           <div className="flex items-center gap-2 mt-0.5 sm:hidden text-xs" style={{ color: 'var(--muted)' }}>
             <span>{potName}</span>
@@ -275,12 +276,8 @@ function SavingRow({
             <span>{dateRange(saving)}</span>
           </div>
           <div className="mt-1 flex items-center gap-2 text-[11px]" style={{ color: 'var(--muted)' }}>
-            <span>Default {fmtCurrency(saving.amount)}</span>
             {hasHistory && (
-              <>
-                <span>·</span>
-                <span>{history.length} dated {history.length === 1 ? 'change' : 'changes'}</span>
-              </>
+              <span>{history.length} dated {history.length === 1 ? 'change' : 'changes'}</span>
             )}
           </div>
         </div>

@@ -291,7 +291,7 @@ export function filterPersistedAppDataForUser(
       .filter(budget => isBudgetVisible(budget, accessibleUserIds))
       .map(budget => ({
         ...budget,
-        items: budget.items.filter(item => isBudgetItemVisible(item, accessibleUserIds) && potIds.has(item.potId as string)),
+        items: budget.items.filter(item => isBudgetItemVisible(item, accessibleUserIds) && (budget.locked || potIds.has(item.potId as string))),
       })),
     sources,
     entries: data.entries.filter(entry => sourceIds.has(entry.incomeSourceId as string)),

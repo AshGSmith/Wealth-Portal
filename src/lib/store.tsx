@@ -8,6 +8,7 @@ import {
   resolveExpenseForMonth,
   sanitizeBudgetForOneOffExpenses,
   type LocalBudget,
+  type ResolvedLineItem,
 } from '@/lib/budgetLogic';
 import { buildLockedBudgetSnapshot, calcBudget } from '@/lib/budgetCalc';
 import type {
@@ -21,6 +22,7 @@ import type {
 } from '@/lib/types';
 import type { AccessibleUser } from '@/lib/auth/types';
 import type { PersistedAppData } from '@/lib/data/server';
+import { isExpenseReimbursementSource } from '@/lib/incomeCalc';
 
 // ─── Legacy localStorage helpers ──────────────────────────────────────────────
 
@@ -164,6 +166,7 @@ interface AppStore {
   deleteBudget:         (month: string) => void;
   setBudgetArchived:    (month: string, archived: boolean) => void;
   setBudgetLocked:      (month: string, locked: boolean)   => void;
+  removeBudget:         (month: string) => void;
 
   upsertSource:  (s: IncomeSource) => void;
   upsertEntry:   (e: IncomeEntry)  => void;
@@ -176,11 +179,15 @@ interface AppStore {
   removeSavingAmountHistory: (id: string) => void;
 
   setSourceArchived:  (id: string, archived: boolean) => void;
+  removeSource:       (id: string) => void;
   removeEntry:        (id: string) => void;
   movePot:            (id: string, direction: -1 | 1) => void;
   setPotArchived:     (id: string, archived: boolean) => void;
+  removePot:          (id: string) => void;
   setExpenseArchived: (id: string, archived: boolean) => void;
+  removeExpense:      (id: string) => void;
   setSavingArchived:  (id: string, archived: boolean) => void;
+  removeSaving:       (id: string) => void;
 
   // Wealth
   mortgages:       Mortgage[];
@@ -198,19 +205,24 @@ interface AppStore {
   upsertMortgagePayment: (p: MortgagePayment) => void;
   removeMortgagePayment: (id: string)         => void;
   upsertProperty:        (p: Property)        => void;
+  removeProperty:        (id: string)         => void;
   upsertSavingsAccount:  (a: SavingsAccount)  => void;
   upsertSavingsHistory:  (h: SavingsHistory)  => void;
   removeSavingsHistory:  (id: string)         => void;
+  removeSavingsAccount:  (id: string)         => void;
   upsertDebt:            (d: Debt)            => void;
   upsertDebtTransaction: (t: DebtTransaction) => void;
   removeDebtTransaction: (id: string)         => void;
   upsertDebtHistory:     (h: DebtHistory)     => void;
   removeDebtHistory:     (id: string)         => void;
+  removeDebt:            (id: string)         => void;
   upsertPension:         (p: Pension)         => void;
   upsertPensionHistory:  (h: PensionHistory)  => void;
   removePensionHistory:  (id: string)         => void;
+  removePension:         (id: string)         => void;
 
   setMortgageArchived:      (id: string, archived: boolean) => void;
+  removeMortgage:           (id: string) => void;
   setPropertyArchived:      (id: string, archived: boolean) => void;
   setSavingsAccountArchived:(id: string, archived: boolean) => void;
   setDebtArchived:          (id: string, archived: boolean) => void;
@@ -241,6 +253,30 @@ function moveByDirection<T extends { id: string }>(prev: T[], id: string, direct
   const [item] = next.splice(index, 1);
   next.splice(targetIndex, 0, item);
   return next;
+}
+
+function removeById<T extends { id: string }>(prev: T[], id: string): T[] {
+  return prev.filter(item => item.id !== id);
+}
+
+function collectBudgetOwnerUserIds(items: ResolvedLineItem[]): string[] {
+  return [...new Set(items.flatMap(item => normalizeOwnerUserIds(item.ownerUserIds ?? item.defaultOwnerUserIds, null)))];
+}
+
+function removeItemsFromUnlockedBudgets(
+  budgets: LocalBudget[],
+  predicate: (item: ResolvedLineItem) => boolean,
+): LocalBudget[] {
+  return budgets.map(budget => {
+    if (budget.locked) return budget;
+    const items = budget.items.filter(item => !predicate(item));
+    if (items.length === budget.items.length) return budget;
+    return {
+      ...budget,
+      items,
+      ownerUserIds: collectBudgetOwnerUserIds(items),
+    };
+  });
 }
 
 function currentYearMonth(): string {
@@ -299,8 +335,54 @@ function normalizeSalaryHistory(entries: SalaryHistory[]): SalaryHistory[] {
   return entries.map(normalizeSalaryHistoryEntry);
 }
 
+function normalizeIncomeEntry(entry: IncomeEntry): IncomeEntry {
+  return {
+    ...entry,
+    endDate: entry.endDate ?? null,
+  };
+}
+
+function normalizeIncomeEntries(entries: IncomeEntry[]): IncomeEntry[] {
+  return entries.map(normalizeIncomeEntry);
+}
+
 function normalizeProviderName(value: string): string {
   return value.trim().toLowerCase();
+}
+
+function dayBefore(isoDate: string): string {
+  const date = new Date(`${isoDate}T00:00:00Z`);
+  date.setUTCDate(date.getUTCDate() - 1);
+  return date.toISOString().slice(0, 10);
+}
+
+function upsertIncomeEntryWithPeriods(
+  prev: IncomeEntry[],
+  entry: IncomeEntry,
+  sources: IncomeSource[],
+): IncomeEntry[] {
+  const normalizedEntry = normalizeIncomeEntry(entry);
+  const next = upsert(prev.map(normalizeIncomeEntry), normalizedEntry);
+  const source = sources.find(item => item.id === normalizedEntry.incomeSourceId) ?? null;
+
+  if (!source || isExpenseReimbursementSource(source)) {
+    return next;
+  }
+
+  const previousEntry = next
+    .filter(item => item.incomeSourceId === normalizedEntry.incomeSourceId && item.id !== normalizedEntry.id && item.date < normalizedEntry.date)
+    .sort((a, b) => b.date.localeCompare(a.date))[0] ?? null;
+
+  if (!previousEntry) {
+    return next;
+  }
+
+  const previousEndDate = dayBefore(normalizedEntry.date);
+  return next.map(item =>
+    item.id === previousEntry.id
+      ? { ...item, endDate: previousEndDate }
+      : item
+  );
 }
 
 function isNamedIncomeSource(source: IncomeSource, providerName: string): boolean {
@@ -463,6 +545,7 @@ function normalizeProperty(property: Property, fallbackUserId: string | null): P
 function normalizeSavingsAccount(account: SavingsAccount, fallbackUserId: string | null): SavingsAccount {
   return {
     ...account,
+    targetSavingsAmount: account.targetSavingsAmount ?? null,
     ownerUserIds: normalizeOwnerUserIds(account.ownerUserIds, fallbackUserId),
   };
 }
@@ -581,7 +664,7 @@ function normalizePersistedDataSnapshot(
   const normalizedSavings = loadedSavings.map(saving => normalizeSavingWithSource(saving, loadedPots, fallbackUserId));
   const migratedIncomeData = migrateIncomeSourceProvider(
     normalizeIncomeSources(snapshot.sources, fallbackUserId),
-    snapshot.entries,
+    normalizeIncomeEntries(snapshot.entries),
     normalizeSalaryHistory(snapshot.salaryHistory),
     normalizedExpenses,
     normalizedSavings,
@@ -591,7 +674,7 @@ function normalizePersistedDataSnapshot(
   return {
     budgets: normalizeBudgets(migratedIncomeData.budgets, migratedIncomeData.sources, normalizedPots, migratedIncomeData.expenses, migratedIncomeData.savings, fallbackUserId),
     sources: migratedIncomeData.sources,
-    entries: migratedIncomeData.entries,
+    entries: normalizeIncomeEntries(migratedIncomeData.entries),
     salaryHistory: migratedIncomeData.salaryHistory,
     pots: normalizedPots,
     expenses: migratedIncomeData.expenses,
@@ -1125,6 +1208,7 @@ export function AppProvider({
     ),
     setActiveBudgetMonth: month => setActiveBudgetMonth(month),
     deleteBudget:      month => setBudgets(prev => prev.filter(b => b.month !== month)),
+    removeBudget:      month => setBudgets(prev => prev.filter(b => b.month !== month)),
     setBudgetArchived: (month, v) => setBudgets(prev => prev.map(b => b.month !== month ? b : { ...b, archived: v })),
     setBudgetLocked:   (month, v) => setBudgets(prev => prev.map(b => {
       if (b.month !== month) return b;
@@ -1141,7 +1225,7 @@ export function AppProvider({
     })),
 
     upsertSource:  s  => setSources(prev  => upsert(prev, normalizeIncomeSource(s, currentUserId))),
-    upsertEntry:   e  => setEntries(prev  => upsert(prev, e)),
+    upsertEntry:   e  => setEntries(prev  => upsertIncomeEntryWithPeriods(prev, e, sources)),
     upsertSalaryHistory: h => setSalaryHistory(prev => upsert(prev, normalizeSalaryHistoryEntry(h))),
     removeSalaryHistory: id => setSalaryHistory(prev => prev.filter(entry => entry.id !== id)),
     upsertPot:     p  => setPots(prev     => upsert(prev, normalizePot(p, currentUserId))),
@@ -1195,11 +1279,50 @@ export function AppProvider({
     removeSavingAmountHistory: id => setSavingAmountHistory(prev => prev.filter(entry => entry.id !== id)),
 
     setSourceArchived:  (id, v) => setSources(prev  => setArchived(prev, id, v)),
+    removeSource: id => {
+      const sourceExpenseIds = new Set(expenses.filter(expense => expense.incomeSourceId === id).map(expense => expense.id as string));
+      const sourceSavingIds = new Set(savings.filter(saving => saving.incomeSourceId === id).map(saving => saving.id as string));
+
+      setSources(prev => removeById(prev, id));
+      setEntries(prev => prev.filter(entry => entry.incomeSourceId !== id));
+      setSalaryHistory(prev => prev.filter(entry => entry.incomeSourceId !== id));
+      setExpenses(prev => prev.filter(expense => expense.incomeSourceId !== id));
+      setSavings(prev => prev.filter(saving => saving.incomeSourceId !== id));
+      setSavingAmountHistory(prev => prev.filter(entry => !sourceSavingIds.has(entry.savingId as string)));
+      setBudgets(prev => removeItemsFromUnlockedBudgets(prev, item =>
+        item.incomeSourceId === id
+        || (item.sourceType === 'expense' && sourceExpenseIds.has(item.sourceId))
+        || (item.sourceType === 'saving' && sourceSavingIds.has(item.sourceId))
+      ));
+    },
     removeEntry:        id      => setEntries(prev   => prev.filter(e => e.id !== id)),
     movePot:            (id, direction) => setPots(prev => moveByDirection(prev, id, direction)),
     setPotArchived:     (id, v) => setPots(prev      => setArchived(prev, id, v)),
+    removePot:          id => {
+      const potExpenseIds = new Set(expenses.filter(expense => expense.potId === id).map(expense => expense.id as string));
+      const potSavingIds = new Set(savings.filter(saving => saving.potId === id).map(saving => saving.id as string));
+
+      setPots(prev => removeById(prev, id));
+      setExpenses(prev => prev.filter(expense => expense.potId !== id));
+      setSavings(prev => prev.filter(saving => saving.potId !== id));
+      setSavingAmountHistory(prev => prev.filter(entry => !potSavingIds.has(entry.savingId as string)));
+      setBudgets(prev => removeItemsFromUnlockedBudgets(prev, item =>
+        item.potId === id
+        || (item.sourceType === 'expense' && potExpenseIds.has(item.sourceId))
+        || (item.sourceType === 'saving' && potSavingIds.has(item.sourceId))
+      ));
+    },
     setExpenseArchived: (id, v) => setExpenses(prev  => setArchived(prev, id, v)),
+    removeExpense:      id => {
+      setExpenses(prev => removeById(prev, id));
+      setBudgets(prev => removeItemsFromUnlockedBudgets(prev, item => item.sourceType === 'expense' && item.sourceId === id));
+    },
     setSavingArchived:  (id, v) => setSavings(prev   => setArchived(prev, id, v)),
+    removeSaving:       id => {
+      setSavings(prev => removeById(prev, id));
+      setSavingAmountHistory(prev => prev.filter(entry => entry.savingId !== id));
+      setBudgets(prev => removeItemsFromUnlockedBudgets(prev, item => item.sourceType === 'saving' && item.sourceId === id));
+    },
 
     // Wealth
     mortgages: visibleMortgages, mortgagePayments: visibleMortgagePayments, properties: visibleProperties,
@@ -1211,9 +1334,14 @@ export function AppProvider({
     upsertMortgagePayment: p => setMortgagePayments(prev => upsert(prev, p)),
     removeMortgagePayment: id => setMortgagePayments(prev => prev.filter(p => p.id !== id)),
     upsertProperty:        p => setProperties(prev       => upsert(prev, normalizeProperty(p, currentUserId))),
+    removeProperty:        id => setProperties(prev      => removeById(prev, id)),
     upsertSavingsAccount:  a => setSavingsAccounts(prev  => upsert(prev, normalizeSavingsAccount(a, currentUserId))),
     upsertSavingsHistory:  h => setSavingsHistory(prev   => upsert(prev, h)),
     removeSavingsHistory:  id => setSavingsHistory(prev  => prev.filter(h => h.id !== id)),
+    removeSavingsAccount:  id => {
+      setSavingsAccounts(prev => removeById(prev, id));
+      setSavingsHistory(prev => prev.filter(entry => entry.savingsAccountId !== id));
+    },
     upsertDebt:            d => setDebts(prev => upsert(prev, normalizeDebt(d as Debt & { type?: 'loan' | 'credit-card' }, currentUserId))),
     upsertDebtTransaction: t => {
       const transaction = normalizeDebtTransaction(t);
@@ -1240,11 +1368,25 @@ export function AppProvider({
     },
     upsertDebtHistory:     h => setDebtHistory(prev      => upsert(prev, normalizeDebtHistoryEntry(h))),
     removeDebtHistory:     id => setDebtHistory(prev     => prev.filter(h => h.id !== id)),
+    removeDebt:            id => {
+      setDebts(prev => removeById(prev, id));
+      setDebtTransactions(prev => prev.filter(entry => entry.debtId !== id));
+      setDebtHistory(prev => prev.filter(entry => entry.debtId !== id));
+    },
     upsertPension:         p => setPensions(prev         => upsert(prev, normalizePension(p, currentUserId))),
     upsertPensionHistory:  h => setPensionHistory(prev   => upsert(prev, h)),
     removePensionHistory:  id => setPensionHistory(prev  => prev.filter(h => h.id !== id)),
+    removePension:         id => {
+      setPensions(prev => removeById(prev, id));
+      setPensionHistory(prev => prev.filter(entry => entry.pensionId !== id));
+    },
 
     setMortgageArchived:       (id, v) => setMortgages(prev       => setArchived(prev, id, v)),
+    removeMortgage:            id => {
+      setMortgages(prev => removeById(prev, id));
+      setMortgagePayments(prev => prev.filter(payment => payment.mortgageId !== id));
+      setProperties(prev => prev.map(property => property.mortgageId === id ? { ...property, mortgageId: null } : property));
+    },
     setPropertyArchived:       (id, v) => setProperties(prev      => setArchived(prev, id, v)),
     setSavingsAccountArchived: (id, v) => setSavingsAccounts(prev => setArchived(prev, id, v)),
     setDebtArchived:           (id, v) => setDebts(prev           => setArchived(prev, id, v)),

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Plus, Pencil, Archive, ArchiveRestore, ChevronDown, ChevronRight } from 'lucide-react';
+import { Plus, Pencil, Archive, ArchiveRestore, ChevronDown, ChevronRight, Trash2 } from 'lucide-react';
 import PageHeader from '@/components/layout/PageHeader';
 import SavingForm from '@/components/savings/SavingForm';
 import SavingAmountHistoryForm from '@/components/savings/SavingAmountHistoryForm';
@@ -99,6 +99,7 @@ export default function SavingsPage() {
                 accessibleUsers={store.accessibleUsers}
                 onToggleExpanded={() => toggleExpanded(saving.id)}
                 onAddAmountChange={() => setHistorySavingId(saving.id)}
+                onRemoveAmountChange={historyId => store.removeSavingAmountHistory(historyId)}
                 onEdit={() => openEdit(saving)}
                 onArchive={() => store.setSavingArchived(saving.id, true)}
               />
@@ -135,8 +136,14 @@ export default function SavingsPage() {
                     accessibleUsers={store.accessibleUsers}
                     onToggleExpanded={() => toggleExpanded(saving.id)}
                     onAddAmountChange={() => setHistorySavingId(saving.id)}
+                    onRemoveAmountChange={historyId => store.removeSavingAmountHistory(historyId)}
                     onEdit={() => openEdit(saving)}
                     onRestore={() => store.setSavingArchived(saving.id, false)}
+                    onDelete={() => {
+                      if (window.confirm(`Delete archived saving "${saving.name}" permanently?`)) {
+                        store.removeSaving(saving.id);
+                      }
+                    }}
                     isArchived
                   />
                 ))}
@@ -183,9 +190,11 @@ interface RowProps {
   accessibleUsers: AccessibleUser[];
   onToggleExpanded: () => void;
   onAddAmountChange: () => void;
+  onRemoveAmountChange: (historyId: string) => void;
   onEdit:     () => void;
   onArchive?: () => void;
   onRestore?: () => void;
+  onDelete?: () => void;
   isArchived?: boolean;
 }
 
@@ -231,9 +240,11 @@ function SavingRow({
   accessibleUsers,
   onToggleExpanded,
   onAddAmountChange,
+  onRemoveAmountChange,
   onEdit,
   onArchive,
   onRestore,
+  onDelete,
   isArchived,
 }: RowProps) {
   const ownership = ownershipSummary(saving.ownerUserIds, accessibleUsers);
@@ -321,16 +332,28 @@ function SavingRow({
             <Pencil size={13} />
           </button>
           {isArchived ? (
-            <button
-              onClick={onRestore}
-              className="rounded-lg p-1.5 transition-colors"
-              style={{ color: 'var(--muted)' }}
-              title="Restore"
-              onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-hover)')}
-              onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
-            >
-              <ArchiveRestore size={13} />
-            </button>
+            <>
+              <button
+                onClick={onRestore}
+                className="rounded-lg p-1.5 transition-colors"
+                style={{ color: 'var(--muted)' }}
+                title="Restore"
+                onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-hover)')}
+                onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+              >
+                <ArchiveRestore size={13} />
+              </button>
+              <button
+                onClick={onDelete}
+                className="rounded-lg p-1.5 transition-colors"
+                style={{ color: '#f43f5e' }}
+                title="Delete permanently"
+                onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-hover)')}
+                onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+              >
+                <Trash2 size={13} />
+              </button>
+            </>
           ) : (
             <button
               onClick={onArchive}
@@ -388,9 +411,22 @@ function SavingRow({
                       Effective from this date forward
                     </p>
                   </div>
-                  <span className="text-sm font-semibold tabular-nums" style={{ color: 'var(--foreground)' }}>
-                    {fmtCurrency(entry.amount)}
-                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-sm font-semibold tabular-nums" style={{ color: 'var(--foreground)' }}>
+                      {fmtCurrency(entry.amount)}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => onRemoveAmountChange(entry.id)}
+                      className="rounded-lg p-1.5 transition-colors"
+                      style={{ color: 'var(--muted)' }}
+                      title="Delete amount change"
+                      onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface)')}
+                      onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                    >
+                      <Trash2 size={12} />
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>

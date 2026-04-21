@@ -1,4 +1,5 @@
 import type { Pot, IncomeSource, IncomeEntry } from './types';
+import { incomeForSourceInBudgetMonth } from './incomeCalc';
 import type {
   LocalBudget,
   LockedBudgetSnapshot,
@@ -87,13 +88,6 @@ function materializeLockedSnapshot(snapshot: LockedBudgetSnapshot): BudgetCalc {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-/** Sum IncomeEntry amounts for one source in one YYYY-MM month. */
-function incomeForSource(entries: IncomeEntry[], sourceId: string, month: string): number {
-  return entries
-    .filter(e => e.incomeSourceId === sourceId && e.date.slice(0, 7) === month)
-    .reduce((sum, e) => sum + e.amount, 0);
-}
-
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 export function calcBudget(
@@ -144,7 +138,7 @@ export function calcBudget(
   const sourceCalcs: SourceCalc[] = sources
     .filter(s => !s.archived)
     .map(source => {
-      const income     = incomeForSource(entries, source.id, budget.month);
+      const income     = incomeForSourceInBudgetMonth(source, entries, budget.month);
       const allocated  = allocatedBySource.get(source.id) ?? 0;
       return {
         source,

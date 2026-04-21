@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { ChevronLeft, ChevronRight, Plus, Lock, LockOpen, Archive, ArchiveRestore, Trash2, ChevronDown, RefreshCw } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, Lock, LockOpen, Archive, ArchiveRestore, Trash2, ChevronDown, RefreshCw, Funnel } from 'lucide-react';
 import BudgetExportDocument from '@/components/budget/BudgetExportDocument';
 import PageHeader from '@/components/layout/PageHeader';
 import PotCard from '@/components/budget/PotCard';
@@ -25,11 +25,13 @@ function shiftMonth(ym: string, delta: number): string {
 export default function BudgetPage() {
   const store = useStore();
   const exportRef = useRef<HTMLDivElement | null>(null);
+  const filterMenuRef = useRef<HTMLDivElement | null>(null);
 
   const [selectedPotId,  setSelectedPot]  = useState<PotId | null>(null);
   const [showNewModal,   setShowNewModal]  = useState(false);
   const [showArchived,   setShowArchived]  = useState(false);
   const [selectedIncomeSourceId, setSelectedIncomeSourceId] = useState<'all' | IncomeSourceId>('all');
+  const [showIncomeSourceFilter, setShowIncomeSourceFilter] = useState(false);
 
   // After localStorage hydrates, jump to the most recent budget if the stored
   // active month has no budget (e.g. first load or stale pointer).
@@ -55,11 +57,15 @@ export default function BudgetPage() {
     : null;
 
   const availableSourceCalcs = calc?.sourceCalcs ?? [];
-  const filteredCalc = calc && selectedIncomeSourceId !== 'all'
-    ? {
+  const effectiveSelectedIncomeSourceId = calc && selectedIncomeSourceId !== 'all' && calc.sourceCalcs.some(sourceCalc => sourceCalc.source.id === selectedIncomeSourceId)
+    ? selectedIncomeSourceId
+    : 'all';
+  const filteredCalc = !calc || effectiveSelectedIncomeSourceId === 'all'
+    ? calc
+    : {
         potCalcs: calc.potCalcs
           .map(potCalc => {
-            const items = potCalc.items.filter(item => item.incomeSourceId === selectedIncomeSourceId);
+            const items = potCalc.items.filter(item => item.incomeSourceId === effectiveSelectedIncomeSourceId);
             const expenses = items.filter(item => item.sourceType === 'expense').reduce((sum, item) => sum + item.amount, 0);
             const savings = items.filter(item => item.sourceType === 'saving').reduce((sum, item) => sum + item.amount, 0);
             return {
@@ -71,41 +77,49 @@ export default function BudgetPage() {
             };
           })
           .filter(potCalc => potCalc.items.length > 0),
-        sourceCalcs: calc.sourceCalcs.filter(sourceCalc => sourceCalc.source.id === selectedIncomeSourceId),
+        sourceCalcs: calc.sourceCalcs.filter(sourceCalc => sourceCalc.source.id === effectiveSelectedIncomeSourceId),
         totals: {
           income: calc.sourceCalcs
-            .filter(sourceCalc => sourceCalc.source.id === selectedIncomeSourceId)
+            .filter(sourceCalc => sourceCalc.source.id === effectiveSelectedIncomeSourceId)
             .reduce((sum, sourceCalc) => sum + sourceCalc.income, 0),
           allocated: calc.sourceCalcs
-            .filter(sourceCalc => sourceCalc.source.id === selectedIncomeSourceId)
+            .filter(sourceCalc => sourceCalc.source.id === effectiveSelectedIncomeSourceId)
             .reduce((sum, sourceCalc) => sum + sourceCalc.allocated, 0),
           balance: calc.sourceCalcs
-            .filter(sourceCalc => sourceCalc.source.id === selectedIncomeSourceId)
+            .filter(sourceCalc => sourceCalc.source.id === effectiveSelectedIncomeSourceId)
             .reduce((sum, sourceCalc) => sum + sourceCalc.surplus, 0),
         },
-      }
-    : calc;
+      };
 
-  const selectedPotCalc = filteredCalc && selectedPotId ? filteredCalc.potCalcs.find(pc => pc.potId === selectedPotId) : null;
-  const selectedSourceCalcs = filteredCalc && selectedPotId ? getSourceCalcsForPot(filteredCalc, selectedPotId) : [];
+  const effectiveSelectedPotId = selectedPotId && filteredCalc?.potCalcs.some(potCalc => potCalc.potId === selectedPotId)
+    ? selectedPotId
+    : null;
+  const selectedPotCalc = filteredCalc && effectiveSelectedPotId ? filteredCalc.potCalcs.find(pc => pc.potId === effectiveSelectedPotId) : null;
+  const selectedSourceCalcs = filteredCalc && effectiveSelectedPotId ? getSourceCalcsForPot(filteredCalc, effectiveSelectedPotId) : [];
   const visiblePotCalcs = filteredCalc ? filteredCalc.potCalcs.filter(potCalc => potCalc.items.length > 0) : [];
 
   useEffect(() => {
-    if (!calc) {
-      setSelectedIncomeSourceId('all');
-      return;
+    if (!showIncomeSourceFilter) return;
+
+    function handlePointerDown(event: MouseEvent) {
+      if (!filterMenuRef.current?.contains(event.target as Node)) {
+        setShowIncomeSourceFilter(false);
+      }
     }
 
-    if (selectedIncomeSourceId !== 'all' && !calc.sourceCalcs.some(sourceCalc => sourceCalc.source.id === selectedIncomeSourceId)) {
-      setSelectedIncomeSourceId('all');
+    function handleEscape(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        setShowIncomeSourceFilter(false);
+      }
     }
-  }, [calc, selectedIncomeSourceId]);
 
-  useEffect(() => {
-    if (!selectedPotId || !filteredCalc?.potCalcs.some(potCalc => potCalc.potId === selectedPotId)) {
-      setSelectedPot(null);
-    }
-  }, [filteredCalc, selectedPotId]);
+    document.addEventListener('mousedown', handlePointerDown);
+    document.addEventListener('keydown', handleEscape);
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown);
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, [showIncomeSourceFilter]);
 
   // ── Handlers ─────────────────────────────────────────────────────────────
   function handleCreate(month: string) {
@@ -316,33 +330,66 @@ export default function BudgetPage() {
 
           {/* Source filter */}
           {availableSourceCalcs.length > 0 && (
-            <div className="mb-3 print:hidden">
-              <div
-                className="inline-flex max-w-full items-center gap-2 rounded-xl border px-3 py-2"
-                style={{ background: 'var(--surface)', borderColor: 'var(--border)' }}
-              >
-                <label htmlFor="budget-income-source-filter" className="shrink-0 text-[11px] font-medium uppercase tracking-wide" style={{ color: 'var(--muted)' }}>
-                  Source
-                </label>
-                <select
-                  id="budget-income-source-filter"
-                  value={selectedIncomeSourceId}
-                  onChange={e => setSelectedIncomeSourceId(e.target.value as 'all' | IncomeSourceId)}
-                  className="min-w-0 rounded-lg border px-2.5 py-1.5 text-xs outline-none transition-colors"
+            <div className="mb-3 flex justify-end print:hidden">
+              <div className="relative" ref={filterMenuRef}>
+                <button
+                  type="button"
+                  onClick={() => setShowIncomeSourceFilter(open => !open)}
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-xl border transition-colors"
                   style={{
-                    background: 'var(--surface-hover)',
-                    borderColor: 'var(--border)',
-                    color: 'var(--foreground)',
-                    colorScheme: 'dark',
+                    background: effectiveSelectedIncomeSourceId === 'all' ? 'var(--surface)' : 'var(--surface-hover)',
+                    borderColor: effectiveSelectedIncomeSourceId === 'all' ? 'var(--border)' : 'var(--primary)',
+                    color: effectiveSelectedIncomeSourceId === 'all' ? 'var(--muted)' : 'var(--primary)',
                   }}
+                  aria-label="Filter by income source"
+                  title={effectiveSelectedIncomeSourceId === 'all' ? 'Filter by income source' : 'Income source filter active'}
                 >
-                  <option value="all">All income sources</option>
-                  {availableSourceCalcs.map(sourceCalc => (
-                    <option key={sourceCalc.source.id} value={sourceCalc.source.id}>
-                      {sourceCalc.source.provider}
-                    </option>
-                  ))}
-                </select>
+                  <Funnel size={15} />
+                </button>
+
+                {showIncomeSourceFilter && (
+                  <div
+                    className="absolute right-0 z-20 mt-2 w-56 overflow-hidden rounded-xl border shadow-xl"
+                    style={{ background: 'var(--surface)', borderColor: 'var(--border)' }}
+                  >
+                    <div className="border-b px-3 py-2 text-[11px] font-medium uppercase tracking-wide" style={{ borderColor: 'var(--border)', color: 'var(--muted)' }}>
+                      Income Source
+                    </div>
+                    <div className="max-h-72 overflow-y-auto py-1">
+                      {[
+                        { id: 'all', label: 'All' },
+                        ...availableSourceCalcs.map(sourceCalc => ({
+                          id: sourceCalc.source.id as string,
+                          label: sourceCalc.source.provider,
+                        })),
+                      ].map(option => {
+                        const isSelected = effectiveSelectedIncomeSourceId === option.id;
+                        return (
+                          <button
+                            key={option.id}
+                            type="button"
+                            onClick={() => {
+                              setSelectedIncomeSourceId(option.id as 'all' | IncomeSourceId);
+                              setShowIncomeSourceFilter(false);
+                            }}
+                            className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm transition-colors"
+                            style={{
+                              background: isSelected ? 'var(--surface-hover)' : 'transparent',
+                              color: isSelected ? 'var(--foreground)' : 'var(--muted)',
+                            }}
+                          >
+                            <span className="truncate">{option.label}</span>
+                            {isSelected && (
+                              <span className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: 'var(--primary)' }}>
+                                On
+                              </span>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -477,13 +524,18 @@ export default function BudgetPage() {
                       Restore
                     </button>
                     <button
-                      onClick={() => store.deleteBudget(b.month)}
+                      onClick={() => {
+                        if (window.confirm(`Delete archived budget ${fmtMonth(b.month)} permanently?`)) {
+                          store.removeBudget(b.month);
+                        }
+                      }}
                       className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors"
                       style={{ color: '#f43f5e' }}
                       onMouseEnter={e => (e.currentTarget.style.background = '#f43f5e18')}
                       onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
                     >
                       <Trash2 size={12} />
+                      Delete
                     </button>
                   </div>
                 </div>

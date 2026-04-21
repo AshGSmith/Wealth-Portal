@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Plus, Pencil, Archive, ArchiveRestore, ChevronDown, ChevronRight, ArrowUp, ArrowDown } from 'lucide-react';
+import { Plus, Pencil, Archive, ArchiveRestore, ChevronDown, ChevronRight, ArrowUp, ArrowDown, Trash2 } from 'lucide-react';
 import PageHeader from '@/components/layout/PageHeader';
 import PotForm from '@/components/pots/PotForm';
 import { useStore } from '@/lib/store';
@@ -106,6 +106,11 @@ export default function PotsPage() {
                     accessibleUsers={store.accessibleUsers}
                     onEdit={() => openEdit(pot)}
                     onRestore={() => store.setPotArchived(pot.id, false)}
+                    onDelete={() => {
+                      if (window.confirm(`Delete archived pot "${pot.name}" permanently?`)) {
+                        store.removePot(pot.id);
+                      }
+                    }}
                     isArchived
                   />
                 ))}
@@ -140,6 +145,7 @@ interface RowProps {
   onMoveDown?: () => void;
   onArchive?: () => void;
   onRestore?: () => void;
+  onDelete?: () => void;
   isArchived?: boolean;
 }
 
@@ -166,6 +172,7 @@ function PotRow({
   onMoveDown,
   onArchive,
   onRestore,
+  onDelete,
   isArchived,
 }: RowProps) {
   const ownership = ownershipSummary(pot.ownerUserIds, accessibleUsers);
@@ -237,18 +244,30 @@ function PotRow({
         >
           <Pencil size={13} />
         </button>
-        {isArchived ? (
-          <button
-            onClick={onRestore}
-            className="rounded-lg p-1.5 transition-colors"
-            style={{ color: 'var(--muted)' }}
-            title="Restore"
-            onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-hover)')}
-            onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
-          >
-            <ArchiveRestore size={13} />
-          </button>
-        ) : (
+          {isArchived ? (
+            <>
+              <button
+                onClick={onRestore}
+                className="rounded-lg p-1.5 transition-colors"
+                style={{ color: 'var(--muted)' }}
+                title="Restore"
+                onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-hover)')}
+                onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+              >
+                <ArchiveRestore size={13} />
+              </button>
+              <button
+                onClick={onDelete}
+                className="rounded-lg p-1.5 transition-colors"
+                style={{ color: '#f43f5e' }}
+                title="Delete permanently"
+                onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-hover)')}
+                onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+              >
+                <Trash2 size={13} />
+              </button>
+            </>
+          ) : (
           <button
             onClick={onArchive}
             className="rounded-lg p-1.5 transition-colors"

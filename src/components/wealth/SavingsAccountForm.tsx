@@ -18,18 +18,20 @@ interface Props {
 interface FormState {
   name:           string;
   currentBalance: string;
+  targetSavingsAmount: string;
   interestRate:   string;
   ownerUserIds:   string[];
 }
 
 function blank(currentUserId: string | null): FormState {
-  return { name: '', currentBalance: '', interestRate: '', ownerUserIds: currentUserId ? [currentUserId] : [] };
+  return { name: '', currentBalance: '', targetSavingsAmount: '', interestRate: '', ownerUserIds: currentUserId ? [currentUserId] : [] };
 }
 
 function fromAccount(a: SavingsAccount): FormState {
   return {
     name:           a.name,
     currentBalance: String(a.currentBalance),
+    targetSavingsAmount: a.targetSavingsAmount !== null ? String(a.targetSavingsAmount) : '',
     interestRate:   String(a.interestRate * 100),
     ownerUserIds:   a.ownerUserIds,
   };
@@ -56,6 +58,7 @@ export default function SavingsAccountForm({ account, open, onClose, onSave, own
     if (form.ownerUserIds.length === 0)            errs.ownerUserIds   = 'Required';
     if (!form.currentBalance.trim())               errs.currentBalance = 'Required';
     else if (Number(form.currentBalance) < 0)      errs.currentBalance = 'Must be ≥ 0';
+    if (form.targetSavingsAmount.trim() && Number(form.targetSavingsAmount) < 0) errs.targetSavingsAmount = 'Must be ≥ 0';
     if (!form.interestRate.trim())                 errs.interestRate   = 'Required';
     else if (Number(form.interestRate) < 0)        errs.interestRate   = 'Must be ≥ 0';
     setErrors(errs);
@@ -68,6 +71,7 @@ export default function SavingsAccountForm({ account, open, onClose, onSave, own
       id:             account?.id ?? (`sa-${Date.now()}` as unknown as SavingsAccountId),
       name:           form.name.trim(),
       currentBalance: parseFloat(form.currentBalance),
+      targetSavingsAmount: form.targetSavingsAmount.trim() ? parseFloat(form.targetSavingsAmount) : null,
       interestRate:   parseFloat(form.interestRate) / 100,
       ownerUserIds:   form.ownerUserIds,
       archived:       account?.archived ?? false,
@@ -145,6 +149,25 @@ export default function SavingsAccountForm({ account, open, onClose, onSave, own
               Previous balance will be saved to history.
             </p>
           )}
+        </div>
+
+        {/* Interest rate */}
+        <div>
+          <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--muted)' }}>
+            Target savings amount
+          </label>
+          <div className="relative">
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm" style={{ color: 'var(--muted)' }}>£</span>
+            <input type="number" min="0" step="0.01" value={form.targetSavingsAmount}
+              onChange={e => set('targetSavingsAmount', e.target.value)}
+              placeholder="Optional"
+              className={inputCls + ' pl-7'}
+              style={{ ...inputStyle, borderColor: errors.targetSavingsAmount ? '#f43f5e' : 'var(--border)' }} />
+          </div>
+          <p className="mt-1 text-xs" style={{ color: 'var(--muted)' }}>
+            Optional goal for this savings account.
+          </p>
+          {errors.targetSavingsAmount && <p className="mt-1 text-xs text-rose-500">{errors.targetSavingsAmount}</p>}
         </div>
 
         {/* Interest rate */}

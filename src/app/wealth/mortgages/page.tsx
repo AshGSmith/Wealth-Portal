@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Plus, Pencil, Archive, ArchiveRestore, ChevronDown, ChevronRight, Landmark, Receipt } from 'lucide-react';
+import { Plus, Pencil, Archive, ArchiveRestore, ChevronDown, ChevronRight, Landmark, Receipt, Trash2 } from 'lucide-react';
 import PageHeader from '@/components/layout/PageHeader';
 import Tile from '@/components/ui/Tile';
 import MortgageForm from '@/components/wealth/MortgageForm';
@@ -97,6 +97,11 @@ export default function MortgagesPage() {
                   onEdit={() => openEdit(m)}
                   onPayments={() => openPayments(m)}
                   onRestore={() => store.setMortgageArchived(m.id, false)}
+                  onDelete={() => {
+                    if (window.confirm(`Delete archived mortgage "${m.lender}" permanently? Linked properties will be unlinked.`)) {
+                      store.removeMortgage(m.id);
+                    }
+                  }}
                   isArchived
                 />
               ))}
@@ -140,6 +145,7 @@ interface RowProps {
   onPayments:    () => void;
   onArchive?:    () => void;
   onRestore?:    () => void;
+  onDelete?:     () => void;
   isArchived?:   boolean;
 }
 
@@ -156,7 +162,7 @@ function ownershipSummary(ownerUserIds: string[], accessibleUsers: AccessibleUse
   return { label: 'Personal', detail: owner?.name ?? 'Assigned to one user' };
 }
 
-function MortgageRow({ mortgage: m, accessibleUsers, outstanding, fixedInterest, totalLiability, paymentCount, onEdit, onPayments, onArchive, onRestore, isArchived }: RowProps) {
+function MortgageRow({ mortgage: m, accessibleUsers, outstanding, fixedInterest, totalLiability, paymentCount, onEdit, onPayments, onArchive, onRestore, onDelete, isArchived }: RowProps) {
   const paidOff = ((m.amountBorrowed - outstanding) / m.amountBorrowed) * 100;
   const ownership = ownershipSummary(m.ownerUserIds, accessibleUsers);
 
@@ -193,12 +199,20 @@ function MortgageRow({ mortgage: m, accessibleUsers, outstanding, fixedInterest,
             <Pencil size={13} />
           </button>
           {isArchived ? (
-            <button onClick={onRestore}
-              className="rounded-lg p-1.5 transition-colors" style={{ color: 'var(--muted)' }} title="Restore"
-              onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-hover)')}
-              onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
-              <ArchiveRestore size={13} />
-            </button>
+            <>
+              <button onClick={onRestore}
+                className="rounded-lg p-1.5 transition-colors" style={{ color: 'var(--muted)' }} title="Restore"
+                onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-hover)')}
+                onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
+                <ArchiveRestore size={13} />
+              </button>
+              <button onClick={onDelete}
+                className="rounded-lg p-1.5 transition-colors" style={{ color: '#f43f5e' }} title="Delete permanently"
+                onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-hover)')}
+                onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
+                <Trash2 size={13} />
+              </button>
+            </>
           ) : (
             <button onClick={onArchive}
               className="rounded-lg p-1.5 transition-colors" style={{ color: 'var(--muted)' }} title="Archive"

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Plus, Pencil, Archive, ArchiveRestore, ChevronDown, ChevronRight, Home } from 'lucide-react';
+import { Plus, Pencil, Archive, ArchiveRestore, ChevronDown, ChevronRight, Home, Trash2 } from 'lucide-react';
 import PageHeader from '@/components/layout/PageHeader';
 import Tile from '@/components/ui/Tile';
 import PropertyForm from '@/components/wealth/PropertyForm';
@@ -88,6 +88,11 @@ export default function PropertiesPage() {
                   accessibleUsers={store.accessibleUsers}
                   onEdit={() => openEdit(p)}
                   onRestore={() => store.setPropertyArchived(p.id, false)}
+                  onDelete={() => {
+                    if (window.confirm(`Delete archived property "${p.name}" permanently?`)) {
+                      store.removeProperty(p.id);
+                    }
+                  }}
                   isArchived
                 />
               ))}
@@ -119,6 +124,7 @@ interface RowProps {
   onEdit:       () => void;
   onArchive?:   () => void;
   onRestore?:   () => void;
+  onDelete?:    () => void;
   isArchived?:  boolean;
 }
 
@@ -135,7 +141,7 @@ function ownershipSummary(ownerUserIds: string[], accessibleUsers: AccessibleUse
   return { label: 'Personal', detail: owner?.name ?? 'Assigned to one user' };
 }
 
-function PropertyRow({ property: p, mortgageName, accessibleUsers, onEdit, onArchive, onRestore, isArchived }: RowProps) {
+function PropertyRow({ property: p, mortgageName, accessibleUsers, onEdit, onArchive, onRestore, onDelete, isArchived }: RowProps) {
   const gain    = p.currentValue - p.purchasePrice;
   const gainPct = ((gain / p.purchasePrice) * 100).toFixed(1);
   const isGain  = gain >= 0;
@@ -176,12 +182,20 @@ function PropertyRow({ property: p, mortgageName, accessibleUsers, onEdit, onArc
             <Pencil size={13} />
           </button>
           {isArchived ? (
-            <button onClick={onRestore}
-              className="rounded-lg p-1.5 transition-colors" style={{ color: 'var(--muted)' }} title="Restore"
-              onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-hover)')}
-              onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
-              <ArchiveRestore size={13} />
-            </button>
+            <>
+              <button onClick={onRestore}
+                className="rounded-lg p-1.5 transition-colors" style={{ color: 'var(--muted)' }} title="Restore"
+                onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-hover)')}
+                onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
+                <ArchiveRestore size={13} />
+              </button>
+              <button onClick={onDelete}
+                className="rounded-lg p-1.5 transition-colors" style={{ color: '#f43f5e' }} title="Delete permanently"
+                onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-hover)')}
+                onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
+                <Trash2 size={13} />
+              </button>
+            </>
           ) : (
             <button onClick={onArchive}
               className="rounded-lg p-1.5 transition-colors" style={{ color: 'var(--muted)' }} title="Archive"

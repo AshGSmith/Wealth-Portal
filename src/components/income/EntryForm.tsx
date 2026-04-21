@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import Sheet from '@/components/ui/Sheet';
 import type { IncomeEntry, IncomeEntryId, IncomeSourceId } from '@/lib/types';
 
@@ -12,10 +12,20 @@ interface Props {
   onSave:   (entry: IncomeEntry) => void;
 }
 
-interface FormState { amount: string; date: string; }
+interface FormState {
+  amount: string;
+  date: string;
+  endDate: string;
+}
 
-function blank(): FormState { return { amount: '', date: '' }; }
-function fromEntry(e: IncomeEntry): FormState { return { amount: String(e.amount), date: e.date }; }
+function blank(): FormState { return { amount: '', date: '', endDate: '' }; }
+function fromEntry(e: IncomeEntry): FormState {
+  return {
+    amount: String(e.amount),
+    date: e.date,
+    endDate: e.endDate ?? '',
+  };
+}
 
 const inputCls = 'w-full rounded-lg border px-3 py-2.5 text-sm outline-none transition-colors';
 const inputStyle = { background: 'var(--surface-hover)', borderColor: 'var(--border)', color: 'var(--foreground)', colorScheme: 'dark' as const };
@@ -23,10 +33,6 @@ const inputStyle = { background: 'var(--surface-hover)', borderColor: 'var(--bor
 export default function EntryForm({ entry, sourceId, open, onClose, onSave }: Props) {
   const [form, setForm]     = useState<FormState>(() => entry ? fromEntry(entry) : blank());
   const [errors, setErrors] = useState<Partial<Record<keyof FormState, string>>>({});
-
-  useEffect(() => {
-    if (open) { setForm(entry ? fromEntry(entry) : blank()); setErrors({}); }
-  }, [open, entry]);
 
   function set<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm(prev => ({ ...prev, [key]: value }));
@@ -38,6 +44,7 @@ export default function EntryForm({ entry, sourceId, open, onClose, onSave }: Pr
     if (!form.amount.trim())           errs.amount = 'Required';
     else if (Number(form.amount) <= 0) errs.amount = 'Must be > 0';
     if (!form.date)                    errs.date   = 'Required';
+    if (form.endDate && form.endDate < form.date) errs.endDate = 'Must be on or after Start Date';
     setErrors(errs);
     return Object.keys(errs).length === 0;
   }
@@ -49,6 +56,7 @@ export default function EntryForm({ entry, sourceId, open, onClose, onSave }: Pr
       incomeSourceId: sourceId,
       amount:         parseFloat(form.amount),
       date:           form.date,
+      endDate:        form.endDate || null,
     });
     onClose();
   }
@@ -90,12 +98,25 @@ export default function EntryForm({ entry, sourceId, open, onClose, onSave }: Pr
 
         <div>
           <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--muted)' }}>
-            Date <span className="text-rose-500">*</span>
+            Start Date <span className="text-rose-500">*</span>
           </label>
           <input type="date" value={form.date} onChange={e => set('date', e.target.value)}
             className={inputCls}
             style={{ ...inputStyle, borderColor: errors.date ? '#f43f5e' : 'var(--border)' }} />
           {errors.date && <p className="mt-1 text-xs text-rose-500">{errors.date}</p>}
+        </div>
+
+        <div>
+          <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--muted)' }}>
+            End Date
+          </label>
+          <input type="date" value={form.endDate} onChange={e => set('endDate', e.target.value)}
+            className={inputCls}
+            style={{ ...inputStyle, borderColor: errors.endDate ? '#f43f5e' : 'var(--border)' }} />
+          <p className="mt-1 text-xs" style={{ color: 'var(--muted)' }}>
+            Leave blank for ongoing income.
+          </p>
+          {errors.endDate && <p className="mt-1 text-xs text-rose-500">{errors.endDate}</p>}
         </div>
       </div>
     </Sheet>

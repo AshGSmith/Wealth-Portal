@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Plus, Pencil, Archive, ArchiveRestore, ChevronDown, ChevronRight, PiggyBank } from 'lucide-react';
+import { Plus, Pencil, Archive, ArchiveRestore, ChevronDown, ChevronRight, PiggyBank, Trash2 } from 'lucide-react';
 import PageHeader from '@/components/layout/PageHeader';
 import SavingsAccountForm from '@/components/wealth/SavingsAccountForm';
 import type { AccessibleUser } from '@/lib/auth/types';
@@ -107,6 +107,11 @@ export default function SavingsPage() {
                   accessibleUsers={store.accessibleUsers}
                   onEdit={() => openEdit(a)}
                   onRestore={() => store.setSavingsAccountArchived(a.id, false)}
+                  onDelete={() => {
+                    if (window.confirm(`Delete archived savings account "${a.name}" permanently?`)) {
+                      store.removeSavingsAccount(a.id);
+                    }
+                  }}
                   isArchived
                 />
               ))}
@@ -137,6 +142,7 @@ interface RowProps {
   onEdit:     () => void;
   onArchive?: () => void;
   onRestore?: () => void;
+  onDelete?: () => void;
   isArchived?: boolean;
 }
 
@@ -153,13 +159,16 @@ function ownershipSummary(ownerUserIds: string[], accessibleUsers: AccessibleUse
   return { label: 'Personal', detail: owner?.name ?? 'Assigned to you' };
 }
 
-function AccountRow({ account: a, history, accessibleUsers, onEdit, onArchive, onRestore, isArchived }: RowProps) {
+function AccountRow({ account: a, history, accessibleUsers, onEdit, onArchive, onRestore, onDelete, isArchived }: RowProps) {
   const [expanded, setExpanded] = useState(false);
 
   const prev      = history[0];
   const change    = prev ? a.currentBalance - prev.balance : null;
   const isGain    = change !== null && change >= 0;
   const ownership = ownershipSummary(a.ownerUserIds, accessibleUsers);
+  const progress = a.targetSavingsAmount && a.targetSavingsAmount > 0
+    ? Math.min(100, (a.currentBalance / a.targetSavingsAmount) * 100)
+    : null;
 
   return (
     <div className="rounded-xl border overflow-hidden" style={{ background: 'var(--surface)', borderColor: 'var(--border)' }}>
@@ -188,6 +197,11 @@ function AccountRow({ account: a, history, accessibleUsers, onEdit, onArchive, o
               {isGain ? '+' : ''}{fmtCurrency(change)}
             </p>
           )}
+          {a.targetSavingsAmount !== null && (
+            <p className="text-[10px]" style={{ color: 'var(--muted)' }}>
+              Target {fmtCurrency(a.targetSavingsAmount)}
+            </p>
+          )}
         </div>
 
         <div className="flex items-center gap-1 shrink-0">
@@ -198,12 +212,20 @@ function AccountRow({ account: a, history, accessibleUsers, onEdit, onArchive, o
             <Pencil size={13} />
           </button>
           {isArchived ? (
-            <button onClick={onRestore}
-              className="rounded-lg p-1.5 transition-colors" style={{ color: 'var(--muted)' }} title="Restore"
-              onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-hover)')}
-              onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
-              <ArchiveRestore size={13} />
-            </button>
+            <>
+              <button onClick={onRestore}
+                className="rounded-lg p-1.5 transition-colors" style={{ color: 'var(--muted)' }} title="Restore"
+                onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-hover)')}
+                onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
+                <ArchiveRestore size={13} />
+              </button>
+              <button onClick={onDelete}
+                className="rounded-lg p-1.5 transition-colors" style={{ color: '#f43f5e' }} title="Delete permanently"
+                onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-hover)')}
+                onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
+                <Trash2 size={13} />
+              </button>
+            </>
           ) : (
             <button onClick={onArchive}
               className="rounded-lg p-1.5 transition-colors" style={{ color: 'var(--muted)' }} title="Archive"
@@ -214,6 +236,21 @@ function AccountRow({ account: a, history, accessibleUsers, onEdit, onArchive, o
           )}
         </div>
       </div>
+
+      {progress !== null && (
+        <div className="px-4 pb-3">
+          <div className="mb-1 flex items-center justify-between text-[10px]" style={{ color: 'var(--muted)' }}>
+            <span>Savings target</span>
+            <span>{progress.toFixed(0)}%</span>
+          </div>
+          <div className="h-1.5 overflow-hidden rounded-full" style={{ background: 'var(--surface-hover)' }}>
+            <div
+              className="h-full rounded-full"
+              style={{ width: `${progress}%`, background: '#10b981' }}
+            />
+          </div>
+        </div>
+      )}
 
       {/* History toggle strip */}
       {history.length > 0 && (

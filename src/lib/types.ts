@@ -81,14 +81,16 @@ export interface SalaryHistory {
 }
 
 /**
- * A single payment received from an IncomeSource.
- * Many IncomeEntries belong to one IncomeSource.
+ * A dated income period or one-off payment received from an IncomeSource.
+ * For recurring income types, `date` acts as the start date and `endDate`
+ * closes the period when present. Expense reimbursements remain one-off.
  */
 export interface IncomeEntry {
   id:             IncomeEntryId;
   incomeSourceId: IncomeSourceId;  // → IncomeSource
   amount:         number;          // positive, in base currency units
-  date:           ISODate;         // "YYYY-MM-DD"
+  date:           ISODate;         // start date, "YYYY-MM-DD"
+  endDate:        ISODate | null;
 }
 
 /**
@@ -225,6 +227,7 @@ export interface SavingsAccount extends OwnedRecord {
   id:              SavingsAccountId;
   name:            string;
   currentBalance:  number;
+  targetSavingsAmount: number | null;
   interestRate:    number;   // annual rate as decimal
   archived:        boolean;
 }

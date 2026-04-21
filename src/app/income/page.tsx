@@ -3,14 +3,19 @@
 import { useState } from 'react';
 import {
   Plus, Pencil, Archive, ArchiveRestore,
-  ChevronDown, ChevronRight,
+  ChevronDown, ChevronRight, Trash2,
 } from 'lucide-react';
 import PageHeader from '@/components/layout/PageHeader';
 import SourceForm from '@/components/income/SourceForm';
 import EntryForm  from '@/components/income/EntryForm';
 import SalaryHistoryForm from '@/components/income/SalaryHistoryForm';
 import type { AccessibleUser } from '@/lib/auth/types';
-import { isSalarySource, latestAnnualSalary, salaryHistoryForSource } from '@/lib/incomeCalc';
+import {
+  isSalarySource,
+  latestAnnualSalary,
+  salaryHistoryForSource,
+  sortIncomeEntriesByStartDateDesc,
+} from '@/lib/incomeCalc';
 import { useStore } from '@/lib/store';
 import type { IncomeSource, IncomeEntry, IncomeSourceId, SalaryHistory } from '@/lib/types';
 import { fmtCurrency, fmtSourceType } from '@/lib/format';
@@ -130,6 +135,11 @@ export default function IncomePage() {
                   onToggle={() => toggleExpand(source.id)}
                   onEditSource={() => setSourceModal(source)}
                   onRestoreSource={() => store.setSourceArchived(source.id, false)}
+                  onDeleteSource={() => {
+                    if (window.confirm(`Delete archived income source "${source.provider}" permanently? This will also remove its linked entries and salary history.`)) {
+                      store.removeSource(source.id);
+                    }
+                  }}
                   onAddSalaryChange={() => setSalaryModal({ sourceId: source.id, entry: null })}
                   onAddEntry={() => setEntryModal({ mode: 'create', sourceId: source.id })}
                   onEditEntry={entry => setEntryModal({ mode: 'edit', entry })}
@@ -153,6 +163,7 @@ export default function IncomePage() {
       />
 
       <EntryForm
+        key={`${entryModal?.mode === 'edit' ? entryModal.entry.id : entryModal?.mode === 'create' ? entryModal.sourceId : 'entry'}-${entryModal ? 'open' : 'closed'}`}
         entry={entryModal?.mode === 'edit' ? entryModal.entry : null}
         sourceId={
           entryModal?.mode === 'edit'
@@ -190,6 +201,7 @@ interface CardProps {
   onEditSource:     () => void;
   onArchiveSource?: () => void;
   onRestoreSource?: () => void;
+  onDeleteSource?:  () => void;
   onAddSalaryChange?: () => void;
   onAddEntry:       () => void;
   onEditEntry:      (entry: IncomeEntry) => void;
@@ -218,7 +230,7 @@ function ownershipSummary(ownerUserIds: string[], accessibleUsers: AccessibleUse
 
 function SourceCard({
   source, entries, salaryHistory, accessibleUsers, expanded, onToggle,
-  onEditSource, onArchiveSource, onRestoreSource,
+  onEditSource, onArchiveSource, onRestoreSource, onDeleteSource,
   onAddSalaryChange, onAddEntry, onEditEntry, onArchiveEntry,
   isArchived,
 }: CardProps) {
@@ -226,7 +238,7 @@ function SourceCard({
   const salaryEnabled = isSalarySource(source);
   const latestSalary = latestAnnualSalary(source, salaryHistory);
   const ownership = ownershipSummary(source.ownerUserIds, accessibleUsers);
-  const latestEntry = [...entries].sort((a, b) => b.date.localeCompare(a.date))[0] ?? null;
+  const latestEntry = sortIncomeEntriesByStartDateDesc(entries)[0] ?? null;
   const summaryValue = entries.length > 0
     ? fmtCurrency(total)
     : salaryEnabled && latestSalary !== null
@@ -299,16 +311,28 @@ function SourceCard({
             <Pencil size={13} />
           </button>
           {isArchived ? (
-            <button
-              onClick={onRestoreSource}
-              className="rounded-lg p-1.5 transition-colors"
-              style={{ color: 'var(--muted)' }}
-              title="Restore source"
-              onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-hover)')}
-              onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
-            >
-              <ArchiveRestore size={13} />
-            </button>
+            <>
+              <button
+                onClick={onRestoreSource}
+                className="rounded-lg p-1.5 transition-colors"
+                style={{ color: 'var(--muted)' }}
+                title="Restore source"
+                onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-hover)')}
+                onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+              >
+                <ArchiveRestore size={13} />
+              </button>
+              <button
+                onClick={onDeleteSource}
+                className="rounded-lg p-1.5 transition-colors"
+                style={{ color: '#f43f5e' }}
+                title="Delete source permanently"
+                onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-hover)')}
+                onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+              >
+                <Trash2 size={13} />
+              </button>
+            </>
           ) : (
             <button
               onClick={onArchiveSource}
@@ -407,8 +431,7 @@ function SourceCard({
             </p>
           ) : (
             <div className="divide-y" style={{ borderColor: 'var(--border)' }}>
-              {[...entries]
-                .sort((a, b) => b.date.localeCompare(a.date))
+              {sortIncomeEntriesByStartDateDesc(entries)
                 .map(entry => (
                   <div
                     key={entry.id}
@@ -421,6 +444,7 @@ function SourceCard({
                       </span>
                       <span className="ml-2 text-xs" style={{ color: 'var(--muted)' }}>
                         {fmtDate(entry.date)}
+                        {entry.endDate ? ` - ${fmtDate(entry.endDate)}` : ' - Ongoing'}
                       </span>
                     </div>
                     <div className="flex items-center gap-0.5">

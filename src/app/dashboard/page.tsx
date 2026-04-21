@@ -7,6 +7,7 @@ import PageHeader from '@/components/layout/PageHeader';
 import CriticalVsNonCriticalBarCard from '@/components/ui/CriticalVsNonCriticalBarCard';
 import ExpensesSavingsPieCard from '@/components/ui/ExpensesSavingsPieCard';
 import NetWorthTile from '@/components/ui/NetWorthTile';
+import SavingsProgressCard from '@/components/ui/SavingsProgressCard';
 import Tile from '@/components/ui/Tile';
 import {
   calcBudget,
@@ -142,6 +143,17 @@ export default function DashboardPage() {
     store.savingsHistory as Array<SavingsHistory & Record<string, string | number | null | undefined>>,
     'savingsAccountId',
     selectedMonth,
+  );
+  const savingsAccountsWithTargets = store.savingsAccounts.filter(
+    account => !account.archived && account.targetSavingsAmount !== null && account.targetSavingsAmount > 0,
+  );
+  const totalSavingsTarget = savingsAccountsWithTargets.reduce(
+    (sum, account) => sum + (account.targetSavingsAmount ?? 0),
+    0,
+  );
+  const totalSavingsTargetCurrent = savingsAccountsWithTargets.reduce(
+    (sum, account) => sum + account.currentBalance,
+    0,
   );
   const debtTotal = snapshotBalanceForMonth<Debt>(
     store.debts,
@@ -324,6 +336,13 @@ export default function DashboardPage() {
               nonCriticalSavings={budgetSpendingBreakdown.nonCriticalSavings}
               footer={budgetCalc ? `Criticality split for ${fmtMonth(selectedMonth)}.` : `No budget data for ${fmtMonth(selectedMonth)}.`}
             />
+            {totalSavingsTarget > 0 && (
+              <SavingsProgressCard
+                currentTotal={totalSavingsTargetCurrent}
+                targetTotal={totalSavingsTarget}
+                footer={`${savingsAccountsWithTargets.length} account${savingsAccountsWithTargets.length === 1 ? '' : 's'} with savings targets.`}
+              />
+            )}
           </div>
         </section>
       </div>

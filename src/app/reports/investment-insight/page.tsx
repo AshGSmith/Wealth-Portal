@@ -5,6 +5,13 @@ import ReportInsightTable from '@/components/reports/ReportInsightTable';
 import ReportSection from '@/components/reports/ReportSection';
 import Tile from '@/components/ui/Tile';
 import { fmtCurrency } from '@/lib/format';
+import {
+  purchaseExchangeRateNote,
+  purchasePerShareSummary,
+  resolveInvestmentCurrentValue,
+  totalInvestedForInvestment,
+  useInvestmentMarketQuotes,
+} from '@/lib/investmentCalc';
 import { useStore } from '@/lib/store';
 import { totalInvestmentValue } from '@/lib/wealthCalc';
 
@@ -20,23 +27,19 @@ function fmtPercentChange(value: number): string {
   return `${value >= 0 ? '+' : ''}${value.toFixed(1)}%`;
 }
 
-function totalInvestedFor(investmentId: string, purchases: { investmentId: string; amountInvested: number }[]): number {
-  return purchases
-    .filter(entry => entry.investmentId === investmentId)
-    .reduce((sum, entry) => sum + entry.amountInvested, 0);
-}
-
 export default function InvestmentInsightReportPage() {
   const store = useStore();
   const investments = store.investments.filter(investment => !investment.archived);
+  const marketQuotes = useInvestmentMarketQuotes(store.investments, store.investmentPurchases);
   const totalInvested = investments.reduce(
-    (sum, investment) => sum + totalInvestedFor(investment.id, store.investmentPurchases),
+    (sum, investment) => sum + totalInvestedForInvestment(investment.id, store.investmentPurchases),
     0,
   );
   const totalCurrentValue = totalInvestmentValue(
     investments,
     store.investmentPurchases,
     store.investmentValuationHistory,
+    marketQuotes,
   );
   const totalGainLoss = totalCurrentValue - totalInvested;
   const totalGainLossPct = totalInvested > 0 ? (totalGainLoss / totalInvested) * 100 : null;
@@ -77,9 +80,9 @@ export default function InvestmentInsightReportPage() {
           {investments.length > 0 ? investments.map(investment => {
             const purchases = purchasesByInvestment.find(item => item.investment.id === investment.id)?.purchases ?? [];
             const valuations = valuationsByInvestment.find(item => item.investment.id === investment.id)?.valuations ?? [];
-            const totalInvestedForHolding = totalInvestedFor(investment.id, purchases);
-            const latestValuation = valuations[0] ?? null;
-            const currentValue = latestValuation?.currentValue ?? totalInvestedForHolding;
+            const resolved = resolveInvestmentCurrentValue(investment, purchases, valuations, marketQuotes);
+            const totalInvestedForHolding = resolved.totalInvested;
+            const currentValue = resolved.currentValue;
             const gainLoss = currentValue - totalInvestedForHolding;
             const gainLossPct = totalInvestedForHolding > 0 ? (gainLoss / totalInvestedForHolding) * 100 : null;
 
@@ -97,6 +100,8 @@ export default function InvestmentInsightReportPage() {
                     <p className="mt-0.5 text-xs" style={{ color: 'var(--muted)' }}>
                       {investment.tickerOrSymbol || 'No ticker'}
                       {investment.provider ? ` • ${investment.provider}` : ''}
+                      {resolved.source === 'market' && resolved.marketQuote ? ` • Live ${resolved.marketQuote.currency} quote ${resolved.marketQuote.asOf}` : ''}
+                      {resolved.source === 'manual' ? ' • Manual valuation' : ''}
                     </p>
                   </div>
                   <p className="shrink-0 text-sm font-semibold tabular-nums" style={{ color: '#0ea5e9' }}>
@@ -123,13 +128,21 @@ export default function InvestmentInsightReportPage() {
                     { label: 'Date' },
                     { label: 'Amount', align: 'right' },
                     { label: 'Shares', align: 'right' },
+                    { label: 'Per Share', align: 'right' },
                     { label: 'Note' },
                   ]}
                   rows={purchases.map(entry => ([
                     { content: fmtDate(entry.purchaseDate), tone: 'muted' as const },
                     { content: fmtCurrency(entry.amountInvested), align: 'right' as const, tone: 'value' as const },
                     { content: entry.sharesPurchased !== null ? entry.sharesPurchased.toString() : '—', align: 'right' as const, tone: 'muted' as const },
-                    { content: entry.note?.trim() || '—', truncate: true, tone: entry.note ? 'default' as const : 'muted' as const },
+                    { content: purchasePerShareSummary(entry) ?? '—', align: 'right' as const, tone: entry.perSharePriceGbp !== null ? 'value' as const : 'muted' as const },
+                    {
+                      content: [entry.note?.trim() || null, purchaseExchangeRateNote(entry)]
+                        .filter(Boolean)
+                        .join(' · ') || '—',
+                      truncate: true,
+                      tone: entry.note || entry.exchangeRateToGbp ? 'default' as const : 'muted' as const,
+                    },
                   ]))}
                   emptyLabel="No purchases logged."
                 />

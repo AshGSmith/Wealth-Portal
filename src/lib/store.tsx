@@ -16,7 +16,7 @@ import type {
   Mortgage, MortgagePayment, Property,
   SavingsAccount, SavingsHistory,
   Debt, DebtHistory, DebtTransaction,
-  Pension, PensionHistory,
+  Pension, PensionHistory, PensionPayment,
   InvestmentHolding, InvestmentPurchase, InvestmentValuationHistory,
   PotId,
   IncomeSourceId,
@@ -52,6 +52,7 @@ const STORAGE_KEYS = [
   'wmp:debtHistory',
   'wmp:pensions',
   'wmp:pensionHistory',
+  'wmp:pensionPayments',
   'wmp:investments',
   'wmp:investmentPurchases',
   'wmp:investmentValuationHistory',
@@ -126,6 +127,7 @@ function emptyPersistedAppData(): PersistedAppData {
     debtHistory: [],
     pensions: [],
     pensionHistory: [],
+    pensionPayments: [],
     investments: [],
     investmentPurchases: [],
     investmentValuationHistory: [],
@@ -207,6 +209,7 @@ interface AppStore {
   debtHistory:     DebtHistory[];
   pensions:        Pension[];
   pensionHistory:  PensionHistory[];
+  pensionPayments: PensionPayment[];
   investments:     InvestmentHolding[];
   investmentPurchases: InvestmentPurchase[];
   investmentValuationHistory: InvestmentValuationHistory[];
@@ -229,6 +232,8 @@ interface AppStore {
   upsertPension:         (p: Pension)         => void;
   upsertPensionHistory:  (h: PensionHistory)  => void;
   removePensionHistory:  (id: string)         => void;
+  upsertPensionPayment:  (p: PensionPayment)  => void;
+  removePensionPayment:  (id: string)         => void;
   removePension:         (id: string)         => void;
   upsertInvestment:      (investment: InvestmentHolding) => void;
   setInvestmentArchived: (id: string, archived: boolean) => void;
@@ -589,12 +594,26 @@ function normalizeDebts(debts: Debt[], fallbackUserId: string | null): Debt[] {
 function normalizePension(pension: Pension, fallbackUserId: string | null): Pension {
   return {
     ...pension,
+    initialInvestment: pension.initialInvestment ?? null,
     ownerUserIds: normalizeOwnerUserIds(pension.ownerUserIds, fallbackUserId),
   };
 }
 
 function normalizePensions(pensions: Pension[], fallbackUserId: string | null): Pension[] {
   return pensions.map(pension => normalizePension(pension, fallbackUserId));
+}
+
+function normalizePensionPayment(payment: PensionPayment): PensionPayment {
+  return {
+    ...payment,
+    employeeContribution: payment.employeeContribution ?? 0,
+    employerContribution: payment.employerContribution ?? 0,
+    note: payment.note ?? null,
+  };
+}
+
+function normalizePensionPayments(payments: PensionPayment[]): PensionPayment[] {
+  return payments.map(normalizePensionPayment);
 }
 
 function normalizeInvestment(investment: InvestmentHolding, fallbackUserId: string | null): InvestmentHolding {
@@ -613,6 +632,11 @@ function normalizeInvestmentPurchase(entry: InvestmentPurchase): InvestmentPurch
   return {
     ...entry,
     sharesPurchased: entry.sharesPurchased ?? null,
+    perSharePrice: entry.perSharePrice ?? null,
+    perShareCurrency: entry.perShareCurrency ?? null,
+    perSharePriceGbp: entry.perSharePriceGbp ?? null,
+    exchangeRateToGbp: entry.exchangeRateToGbp ?? null,
+    exchangeRateDate: entry.exchangeRateDate ?? null,
     note: entry.note ?? null,
   };
 }
@@ -742,6 +766,7 @@ function normalizePersistedDataSnapshot(
     debtHistory: normalizeDebtHistory(snapshot.debtHistory),
     pensions: normalizePensions(snapshot.pensions, fallbackUserId),
     pensionHistory: snapshot.pensionHistory,
+    pensionPayments: normalizePensionPayments(snapshot.pensionPayments),
     investments: normalizeInvestments(snapshot.investments, fallbackUserId),
     investmentPurchases: normalizeInvestmentPurchases(snapshot.investmentPurchases),
     investmentValuationHistory: normalizeInvestmentValuationHistory(snapshot.investmentValuationHistory),
@@ -769,6 +794,7 @@ function loadLegacyLocalAppData(fallbackUserId: string | null): PersistedAppData
     debtHistory: load('wmp:debtHistory', emptyData.debtHistory),
     pensions: load('wmp:pensions', emptyData.pensions),
     pensionHistory: load('wmp:pensionHistory', emptyData.pensionHistory),
+    pensionPayments: load('wmp:pensionPayments', emptyData.pensionPayments),
     investments: load('wmp:investments', emptyData.investments),
     investmentPurchases: load('wmp:investmentPurchases', emptyData.investmentPurchases),
     investmentValuationHistory: load('wmp:investmentValuationHistory', emptyData.investmentValuationHistory),
@@ -829,6 +855,7 @@ function applySnapshotToState(
     setDebtHistory: (value: DebtHistory[]) => void;
     setPensions: (value: Pension[]) => void;
     setPensionHistory: (value: PensionHistory[]) => void;
+    setPensionPayments: (value: PensionPayment[]) => void;
     setInvestments: (value: InvestmentHolding[]) => void;
     setInvestmentPurchases: (value: InvestmentPurchase[]) => void;
     setInvestmentValuationHistory: (value: InvestmentValuationHistory[]) => void;
@@ -852,6 +879,7 @@ function applySnapshotToState(
   setters.setDebtHistory(snapshot.debtHistory);
   setters.setPensions(snapshot.pensions);
   setters.setPensionHistory(snapshot.pensionHistory);
+  setters.setPensionPayments(snapshot.pensionPayments);
   setters.setInvestments(snapshot.investments);
   setters.setInvestmentPurchases(snapshot.investmentPurchases);
   setters.setInvestmentValuationHistory(snapshot.investmentValuationHistory);
@@ -894,6 +922,7 @@ export function AppProvider({
   const [debtHistory,      setDebtHistory]      = useState<DebtHistory[]>    (initialData.debtHistory);
   const [pensions,         setPensions]         = useState<Pension[]>        (initialData.pensions);
   const [pensionHistory,   setPensionHistory]   = useState<PensionHistory[]> (initialData.pensionHistory);
+  const [pensionPayments,  setPensionPayments]  = useState<PensionPayment[]>(initialData.pensionPayments);
   const [investments,      setInvestments]      = useState<InvestmentHolding[]>(initialData.investments);
   const [investmentPurchases, setInvestmentPurchases] = useState<InvestmentPurchase[]>(initialData.investmentPurchases);
   const [investmentValuationHistory, setInvestmentValuationHistory] = useState<InvestmentValuationHistory[]>(initialData.investmentValuationHistory);
@@ -935,6 +964,7 @@ export function AppProvider({
             setDebtHistory,
             setPensions,
             setPensionHistory,
+            setPensionPayments,
             setInvestments,
             setInvestmentPurchases,
             setInvestmentValuationHistory,
@@ -979,6 +1009,7 @@ export function AppProvider({
           setDebtHistory,
           setPensions,
           setPensionHistory,
+          setPensionPayments,
           setInvestments,
           setInvestmentPurchases,
           setInvestmentValuationHistory,
@@ -1013,6 +1044,7 @@ export function AppProvider({
           setDebtHistory,
           setPensions,
           setPensionHistory,
+          setPensionPayments,
           setInvestments,
           setInvestmentPurchases,
           setInvestmentValuationHistory,
@@ -1055,6 +1087,7 @@ export function AppProvider({
   const visiblePensions = filterOwnedRecords(pensions, accessibleUserIds);
   const visiblePensionIds = new Set(visiblePensions.map(pension => pension.id as string));
   const visiblePensionHistory = pensionHistory.filter(entry => visiblePensionIds.has(entry.pensionId as string));
+  const visiblePensionPayments = pensionPayments.filter(entry => visiblePensionIds.has(entry.pensionId as string));
   const visibleInvestments = filterOwnedRecords(investments, accessibleUserIds);
   const visibleInvestmentIds = new Set(visibleInvestments.map(investment => investment.id as string));
   const visibleInvestmentPurchases = investmentPurchases.filter(entry => visibleInvestmentIds.has(entry.investmentId as string));
@@ -1100,6 +1133,7 @@ export function AppProvider({
         debtHistory,
         pensions,
         pensionHistory,
+        pensionPayments,
         investments,
         investmentPurchases,
         investmentValuationHistory,
@@ -1124,6 +1158,7 @@ export function AppProvider({
     investmentValuationHistory,
     investments,
     pensionHistory,
+    pensionPayments,
     pensions,
     pots,
     properties,
@@ -1169,6 +1204,7 @@ export function AppProvider({
         setDebtHistory,
         setPensions,
         setPensionHistory,
+        setPensionPayments,
         setInvestments,
         setInvestmentPurchases,
         setInvestmentValuationHistory,
@@ -1417,7 +1453,7 @@ export function AppProvider({
     mortgages: visibleMortgages, mortgagePayments: visibleMortgagePayments, properties: visibleProperties,
     savingsAccounts: visibleSavingsAccounts, savingsHistory: visibleSavingsHistory,
     debts: visibleDebts, debtTransactions: visibleDebtTransactions, debtHistory: visibleDebtHistory,
-    pensions: visiblePensions, pensionHistory: visiblePensionHistory,
+    pensions: visiblePensions, pensionHistory: visiblePensionHistory, pensionPayments: visiblePensionPayments,
     investments: visibleInvestments,
     investmentPurchases: visibleInvestmentPurchases,
     investmentValuationHistory: visibleInvestmentValuationHistory,
@@ -1468,9 +1504,12 @@ export function AppProvider({
     upsertPension:         p => setPensions(prev         => upsert(prev, normalizePension(p, currentUserId))),
     upsertPensionHistory:  h => setPensionHistory(prev   => upsert(prev, h)),
     removePensionHistory:  id => setPensionHistory(prev  => prev.filter(h => h.id !== id)),
+    upsertPensionPayment:  payment => setPensionPayments(prev => upsert(prev, normalizePensionPayment(payment))),
+    removePensionPayment:  id => setPensionPayments(prev => prev.filter(payment => payment.id !== id)),
     removePension:         id => {
       setPensions(prev => removeById(prev, id));
       setPensionHistory(prev => prev.filter(entry => entry.pensionId !== id));
+      setPensionPayments(prev => prev.filter(entry => entry.pensionId !== id));
     },
     upsertInvestment:      investment => setInvestments(prev => upsert(prev, normalizeInvestment(investment, currentUserId))),
     setInvestmentArchived: (id, v) => setInvestments(prev => setArchived(prev, id, v)),

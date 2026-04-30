@@ -6,9 +6,11 @@ import { AlertTriangle, ArrowRight, ChevronLeft, ChevronRight } from 'lucide-rea
 import PageHeader from '@/components/layout/PageHeader';
 import CriticalVsNonCriticalBarCard from '@/components/ui/CriticalVsNonCriticalBarCard';
 import ExpensesSavingsPieCard from '@/components/ui/ExpensesSavingsPieCard';
+import InvestmentValueTrendCard from '@/components/ui/InvestmentValueTrendCard';
 import NetWorthTile from '@/components/ui/NetWorthTile';
 import SavingsProgressCard from '@/components/ui/SavingsProgressCard';
 import Tile from '@/components/ui/Tile';
+import { combinedInvestmentValueTrend, dramaticInvestmentDrops, useInvestmentMarketQuotes } from '@/lib/investmentCalc';
 import {
   calcBudget,
   calcBudgetMetricsForMonth,
@@ -116,8 +118,24 @@ function mortgageLiabilitiesForMonth(
 
 export default function DashboardPage() {
   const store = useStore();
+  const investmentMarketQuotes = useInvestmentMarketQuotes(store.investments, store.investmentPurchases);
   const [selectedMonth, setSelectedMonth] = useState(currentYearMonth());
+  const INVESTMENT_DROP_ALERT_THRESHOLD = 0.15;
   const mortgageAlerts = mortgagesWithFixedTermEndingSoon(store.mortgages, currentIsoDate(), 60);
+  const investmentDropAlerts = dramaticInvestmentDrops(
+    store.investments,
+    store.investmentPurchases,
+    store.investmentValuationHistory,
+    investmentMarketQuotes,
+    INVESTMENT_DROP_ALERT_THRESHOLD,
+  );
+  const investmentValueTrend = combinedInvestmentValueTrend(
+    store.investments,
+    store.investmentPurchases,
+    store.investmentValuationHistory,
+    investmentMarketQuotes,
+    currentIsoDate(),
+  );
   const activeBudget = findBudgetForMonth(store.budgets, selectedMonth);
   const activePots = store.pots.filter(p => !p.archived);
   const budgetCalc = activeBudget
@@ -216,6 +234,15 @@ export default function DashboardPage() {
       title: 'Budget over-allocated',
       body: `${over.source.provider} is overspent by ${fmtCurrency(over.allocated - over.income)} in ${fmtMonth(selectedMonth)}.`,
       href: '/budget',
+      tone: 'warn',
+    });
+  }
+
+  for (const investmentAlert of investmentDropAlerts) {
+    alerts.push({
+      title: 'Investment value dropped sharply',
+      body: `${investmentAlert.name} is down ${Math.round(investmentAlert.dropPct * 100)}% (${fmtCurrency(investmentAlert.dropAmount)}) versus its previous comparison value.`,
+      href: `/wealth/investments#${investmentAlert.investmentId}`,
       tone: 'warn',
     });
   }
@@ -336,6 +363,12 @@ export default function DashboardPage() {
               nonCriticalSavings={budgetSpendingBreakdown.nonCriticalSavings}
               footer={budgetCalc ? `Criticality split for ${fmtMonth(selectedMonth)}.` : `No budget data for ${fmtMonth(selectedMonth)}.`}
             />
+            {investmentValueTrend.length > 0 && (
+              <InvestmentValueTrendCard
+                points={investmentValueTrend}
+                footer="Combined investment value versus cost basis from your first logged purchase."
+              />
+            )}
             {totalSavingsTarget > 0 && (
               <SavingsProgressCard
                 currentTotal={totalSavingsTargetCurrent}

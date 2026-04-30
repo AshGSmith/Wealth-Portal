@@ -25,6 +25,7 @@ export type DebtHistoryId      = Brand<string, 'DebtHistoryId'>;
 export type DebtTransactionId  = Brand<string, 'DebtTransactionId'>;
 export type PensionId          = Brand<string, 'PensionId'>;
 export type PensionHistoryId   = Brand<string, 'PensionHistoryId'>;
+export type PensionPaymentId   = Brand<string, 'PensionPaymentId'>;
 export type InvestmentHoldingId = Brand<string, 'InvestmentHoldingId'>;
 export type InvestmentPurchaseId = Brand<string, 'InvestmentPurchaseId'>;
 export type InvestmentValuationHistoryId = Brand<string, 'InvestmentValuationHistoryId'>;
@@ -39,6 +40,7 @@ export type ISODate = string;
 export type DebtType = 'loan' | 'credit-card';
 export type DebtHistoryType = 'snapshot' | 'purchase' | 'payment';
 export type DebtTransactionType = 'purchase' | 'payment';
+export type InvestmentPerShareCurrency = 'GBP' | 'USD';
 
 export type { IncomeSourceType } from './constants';
 
@@ -296,6 +298,7 @@ export interface Pension extends OwnedRecord {
   name:           string;
   provider:       string;
   currentBalance: number;
+  initialInvestment: number | null;
   archived:       boolean;
 }
 
@@ -307,6 +310,18 @@ export interface PensionHistory {
   pensionId: PensionId;  // → Pension
   balance:   number;
   date:      ISODate;
+}
+
+/**
+ * A pension contribution payment for a Pension.
+ */
+export interface PensionPayment {
+  id:                    PensionPaymentId;
+  pensionId:             PensionId;  // → Pension
+  date:                  ISODate;
+  employeeContribution:  number;
+  employerContribution:  number;
+  note?:                 string | null;
 }
 
 /**
@@ -330,6 +345,11 @@ export interface InvestmentPurchase {
   purchaseDate:    ISODate;
   amountInvested:  number;
   sharesPurchased: number | null;
+  perSharePrice:   number | null;
+  perShareCurrency: InvestmentPerShareCurrency | null;
+  perSharePriceGbp: number | null;
+  exchangeRateToGbp: number | null;
+  exchangeRateDate: ISODate | null;
   note?:           string | null;
 }
 

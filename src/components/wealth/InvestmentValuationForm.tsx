@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import Sheet from '@/components/ui/Sheet';
 import type {
   InvestmentHoldingId,
@@ -48,13 +48,6 @@ export default function InvestmentValuationForm({
 }: Props) {
   const [form, setForm] = useState<FormState>(blank);
   const [errors, setErrors] = useState<Partial<Record<keyof FormState, string>>>({});
-
-  useEffect(() => {
-    if (open) {
-      setForm(blank());
-      setErrors({});
-    }
-  }, [open, investmentId]);
 
   if (!investmentId) return null;
   const currentInvestmentId = investmentId;

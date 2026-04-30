@@ -7,6 +7,7 @@ import type { AccessibleUser } from '@/lib/auth/types';
 import type {
   InvestmentHolding,
   InvestmentHoldingId,
+  InvestmentPerShareCurrency,
   InvestmentPurchase,
   InvestmentPurchaseId,
   ISODate,
@@ -29,6 +30,8 @@ interface FormState {
   purchaseDate: string;
   amountInvested: string;
   sharesPurchased: string;
+  perSharePrice: string;
+  perShareCurrency: InvestmentPerShareCurrency;
   note: string;
 }
 
@@ -41,6 +44,8 @@ function blank(currentUserId: string | null): FormState {
     purchaseDate: new Date().toISOString().slice(0, 10),
     amountInvested: '',
     sharesPurchased: '',
+    perSharePrice: '',
+    perShareCurrency: 'GBP',
     note: '',
   };
 }
@@ -54,6 +59,8 @@ function fromInvestment(investment: InvestmentHolding): FormState {
     purchaseDate: new Date().toISOString().slice(0, 10),
     amountInvested: '',
     sharesPurchased: '',
+    perSharePrice: '',
+    perShareCurrency: 'GBP',
     note: '',
   };
 }
@@ -67,10 +74,13 @@ const inputStyle = {
 export default function InvestmentForm({ investment, open, onClose, onSave, ownerOptions, currentUserId }: Props) {
   const [form, setForm] = useState<FormState>(() => investment ? fromInvestment(investment) : blank(currentUserId));
   const [errors, setErrors] = useState<Partial<Record<keyof FormState, string>>>({});
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
   function set<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm(prev => ({ ...prev, [key]: value }));
     setErrors(prev => ({ ...prev, [key]: undefined }));
+    setSubmitError(null);
   }
 
   function validate(): boolean {
@@ -82,13 +92,16 @@ export default function InvestmentForm({ investment, open, onClose, onSave, owne
       if (!form.amountInvested.trim()) nextErrors.amountInvested = 'Required';
       else if (Number(form.amountInvested) <= 0) nextErrors.amountInvested = 'Must be > 0';
       if (form.sharesPurchased.trim() && Number(form.sharesPurchased) <= 0) nextErrors.sharesPurchased = 'Must be > 0';
+      if (form.perSharePrice.trim() && Number(form.perSharePrice) <= 0) nextErrors.perSharePrice = 'Must be > 0';
     }
     setErrors(nextErrors);
     return Object.keys(nextErrors).length === 0;
   }
 
-  function handleSave() {
+  async function handleSave() {
     if (!validate()) return;
+    setSubmitting(true);
+    setSubmitError(null);
 
     const nextInvestment = {
       id: investment?.id ?? (`inv-${Date.now()}` as unknown as InvestmentHoldingId),
@@ -98,16 +111,58 @@ export default function InvestmentForm({ investment, open, onClose, onSave, owne
       ownerUserIds: form.ownerUserIds,
       archived: investment?.archived ?? false,
     };
-    const initialPurchase = investment ? undefined : {
-      id: `inv-purchase-${Date.now()}` as unknown as InvestmentPurchaseId,
-      investmentId: nextInvestment.id,
-      purchaseDate: form.purchaseDate as ISODate,
-      amountInvested: parseFloat(form.amountInvested),
-      sharesPurchased: form.sharesPurchased.trim() ? parseFloat(form.sharesPurchased) : null,
-      note: form.note.trim() || null,
-    };
+    let initialPurchase: InvestmentPurchase | undefined;
+
+    if (!investment) {
+      let perSharePrice: number | null = null;
+      let perShareCurrency: InvestmentPerShareCurrency | null = null;
+      let perSharePriceGbp: number | null = null;
+      let exchangeRateToGbp: number | null = null;
+      let exchangeRateDate: ISODate | null = null;
+
+      if (form.perSharePrice.trim()) {
+        perSharePrice = parseFloat(form.perSharePrice);
+        perShareCurrency = form.perShareCurrency;
+
+        if (perShareCurrency === 'GBP') {
+          perSharePriceGbp = perSharePrice;
+          exchangeRateToGbp = 1;
+          exchangeRateDate = form.purchaseDate as ISODate;
+        } else {
+          try {
+            const response = await fetch('/api/exchange-rates/usd-gbp', { cache: 'no-store' });
+            const data = await response.json() as { rateToGbp?: number; rateDate?: string; message?: string };
+            if (!response.ok || !data.rateToGbp || !data.rateDate) {
+              throw new Error(data.message ?? 'Exchange rate unavailable.');
+            }
+            exchangeRateToGbp = data.rateToGbp;
+            exchangeRateDate = data.rateDate as ISODate;
+            perSharePriceGbp = perSharePrice * exchangeRateToGbp;
+          } catch (error) {
+            setSubmitError(error instanceof Error ? error.message : 'Failed to fetch USD to GBP exchange rate.');
+            setSubmitting(false);
+            return;
+          }
+        }
+      }
+
+      initialPurchase = {
+        id: `inv-purchase-${Date.now()}` as unknown as InvestmentPurchaseId,
+        investmentId: nextInvestment.id,
+        purchaseDate: form.purchaseDate as ISODate,
+        amountInvested: parseFloat(form.amountInvested),
+        sharesPurchased: form.sharesPurchased.trim() ? parseFloat(form.sharesPurchased) : null,
+        perSharePrice,
+        perShareCurrency,
+        perSharePriceGbp,
+        exchangeRateToGbp,
+        exchangeRateDate,
+        note: form.note.trim() || null,
+      };
+    }
 
     onSave({ investment: nextInvestment, initialPurchase });
+    setSubmitting(false);
     onClose();
   }
 
@@ -128,10 +183,11 @@ export default function InvestmentForm({ investment, open, onClose, onSave, owne
       </button>
       <button
         onClick={handleSave}
+        disabled={submitting}
         className="flex-1 rounded-lg py-2.5 text-sm font-semibold"
-        style={{ background: 'var(--primary)', color: '#fff' }}
+        style={{ background: 'var(--primary)', color: '#fff', opacity: submitting ? 0.7 : 1 }}
       >
-        {investment ? 'Save Changes' : 'Add Investment'}
+        {submitting ? 'Saving…' : investment ? 'Save Changes' : 'Add Investment'}
       </button>
     </div>
   );
@@ -256,6 +312,40 @@ export default function InvestmentForm({ investment, open, onClose, onSave, owne
               {errors.sharesPurchased && <p className="mt-1 text-xs text-rose-500">{errors.sharesPurchased}</p>}
             </div>
 
+            <div className="grid grid-cols-[1fr_auto] gap-2">
+              <div>
+                <label className="mb-1.5 block text-xs font-medium" style={{ color: 'var(--muted)' }}>
+                  Per-Share Price <span style={{ color: 'var(--muted)' }}>(optional)</span>
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.0001"
+                  value={form.perSharePrice}
+                  onChange={event => set('perSharePrice', event.target.value)}
+                  placeholder="e.g. 12.3456"
+                  className={inputCls}
+                  style={{ ...inputStyle, borderColor: errors.perSharePrice ? '#f43f5e' : 'var(--border)' }}
+                />
+                {errors.perSharePrice && <p className="mt-1 text-xs text-rose-500">{errors.perSharePrice}</p>}
+              </div>
+
+              <div>
+                <label className="mb-1.5 block text-xs font-medium" style={{ color: 'var(--muted)' }}>
+                  Currency
+                </label>
+                <select
+                  value={form.perShareCurrency}
+                  onChange={event => set('perShareCurrency', event.target.value as InvestmentPerShareCurrency)}
+                  className={inputCls}
+                  style={inputStyle}
+                >
+                  <option value="GBP">GBP</option>
+                  <option value="USD">USD</option>
+                </select>
+              </div>
+            </div>
+
             <div>
               <label className="mb-1.5 block text-xs font-medium" style={{ color: 'var(--muted)' }}>
                 Note <span style={{ color: 'var(--muted)' }}>(optional)</span>
@@ -269,6 +359,10 @@ export default function InvestmentForm({ investment, open, onClose, onSave, owne
                 style={inputStyle}
               />
             </div>
+
+            {submitError && (
+              <p className="text-xs text-rose-500">{submitError}</p>
+            )}
           </div>
         )}
       </div>

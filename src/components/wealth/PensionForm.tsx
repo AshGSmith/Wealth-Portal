@@ -19,11 +19,12 @@ interface FormState {
   name:           string;
   provider:       string;
   currentBalance: string;
+  initialInvestment: string;
   ownerUserIds:   string[];
 }
 
 function blank(currentUserId: string | null): FormState {
-  return { name: '', provider: '', currentBalance: '', ownerUserIds: currentUserId ? [currentUserId] : [] };
+  return { name: '', provider: '', currentBalance: '', initialInvestment: '', ownerUserIds: currentUserId ? [currentUserId] : [] };
 }
 
 function fromPension(p: Pension): FormState {
@@ -31,6 +32,7 @@ function fromPension(p: Pension): FormState {
     name:           p.name,
     provider:       p.provider,
     currentBalance: String(p.currentBalance),
+    initialInvestment: p.initialInvestment !== null ? String(p.initialInvestment) : '',
     ownerUserIds:   p.ownerUserIds,
   };
 }
@@ -57,6 +59,7 @@ export default function PensionForm({ pension, open, onClose, onSave, ownerOptio
     if (form.ownerUserIds.length === 0)          errs.ownerUserIds   = 'Required';
     if (!form.currentBalance.trim())             errs.currentBalance = 'Required';
     else if (Number(form.currentBalance) < 0)    errs.currentBalance = 'Must be ≥ 0';
+    if (form.initialInvestment.trim() && Number(form.initialInvestment) < 0) errs.initialInvestment = 'Must be ≥ 0';
     setErrors(errs);
     return Object.keys(errs).length === 0;
   }
@@ -68,6 +71,7 @@ export default function PensionForm({ pension, open, onClose, onSave, ownerOptio
       name:           form.name.trim(),
       provider:       form.provider.trim(),
       currentBalance: parseFloat(form.currentBalance),
+      initialInvestment: form.initialInvestment.trim() ? parseFloat(form.initialInvestment) : null,
       ownerUserIds:   form.ownerUserIds,
       archived:       pension?.archived ?? false,
     });
@@ -140,7 +144,7 @@ export default function PensionForm({ pension, open, onClose, onSave, ownerOptio
         {/* Current balance */}
         <div>
           <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--muted)' }}>
-            Current balance <span className="text-rose-500">*</span>
+            Current value <span className="text-rose-500">*</span>
           </label>
           <div className="relative">
             <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm" style={{ color: 'var(--muted)' }}>£</span>
@@ -155,6 +159,23 @@ export default function PensionForm({ pension, open, onClose, onSave, ownerOptio
               Previous balance will be saved to history.
             </p>
           )}
+        </div>
+
+        <div>
+          <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--muted)' }}>
+            Initial investment
+          </label>
+          <div className="relative">
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm" style={{ color: 'var(--muted)' }}>£</span>
+            <input type="number" min="0" step="0.01" value={form.initialInvestment}
+              onChange={e => set('initialInvestment', e.target.value)}
+              placeholder="Optional" className={inputCls + ' pl-7'}
+              style={{ ...inputStyle, borderColor: errors.initialInvestment ? '#f43f5e' : 'var(--border)' }} />
+          </div>
+          {errors.initialInvestment && <p className="mt-1 text-xs text-rose-500">{errors.initialInvestment}</p>}
+          <p className="mt-1 text-xs" style={{ color: 'var(--muted)' }}>
+            Used for ROI display only. Asset value still uses current value.
+          </p>
         </div>
 
       </div>

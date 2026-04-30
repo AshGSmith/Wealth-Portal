@@ -1,7 +1,8 @@
 import { useStore } from './store';
+import { resolveInvestmentCurrentValue, useInvestmentMarketQuotes, type InvestmentMarketQuoteMap } from './investmentCalc';
 import type {
   Property, Mortgage, MortgagePayment,
-  SavingsAccount, Debt, Pension, InvestmentHolding, InvestmentPurchase, InvestmentValuationHistory,
+  SavingsAccount, Debt, Pension, PensionPayment, InvestmentHolding, InvestmentPurchase, InvestmentValuationHistory,
 } from './types';
 
 // ─── Output types ─────────────────────────────────────────────────────────────
@@ -154,25 +155,32 @@ export function totalPensionBalance(pensions: Pension[]): number {
     .reduce((s, p) => s + p.currentBalance, 0);
 }
 
+export function totalPensionContributionsForPension(
+  pensionId: string,
+  payments: PensionPayment[],
+): number {
+  return payments
+    .filter(payment => payment.pensionId === pensionId)
+    .reduce((sum, payment) => sum + payment.employeeContribution + payment.employerContribution, 0);
+}
+
+export function pensionReturnFromInitialInvestment(pension: Pension): number | null {
+  if (pension.initialInvestment === null) return null;
+  return pension.currentBalance - pension.initialInvestment;
+}
+
 /** Sum latest valuation across all non-archived investment holdings. */
 export function totalInvestmentValue(
   investments: InvestmentHolding[],
   purchases: InvestmentPurchase[],
   valuationHistory: InvestmentValuationHistory[],
+  marketQuotes?: InvestmentMarketQuoteMap,
 ): number {
   return investments
     .filter(investment => !investment.archived)
-    .reduce((sum, investment) => {
-      const latestValuation = valuationHistory
-        .filter(entry => entry.investmentId === investment.id)
-        .sort((a, b) => a.valuationDate.localeCompare(b.valuationDate))
-        .at(-1);
-      const totalInvested = purchases
-        .filter(entry => entry.investmentId === investment.id)
-        .reduce((purchaseSum, entry) => purchaseSum + entry.amountInvested, 0);
-
-      return sum + (latestValuation?.currentValue ?? totalInvested);
-    }, 0);
+    .reduce((sum, investment) => (
+      sum + resolveInvestmentCurrentValue(investment, purchases, valuationHistory, marketQuotes).currentValue
+    ), 0);
 }
 
 // ─── React hook ──────────────────────────────────────────────────────────────
@@ -180,6 +188,7 @@ export function totalInvestmentValue(
 /** Reactive wealth snapshot — re-calculates whenever any store value changes. */
 export function useWealthCalc(): WealthCalc {
   const store = useStore();
+  const marketQuotes = useInvestmentMarketQuotes(store.investments, store.investmentPurchases);
   return calcWealth(
     store.properties,
     store.mortgages,
@@ -190,6 +199,7 @@ export function useWealthCalc(): WealthCalc {
     store.investments,
     store.investmentPurchases,
     store.investmentValuationHistory,
+    marketQuotes,
   );
 }
 
@@ -211,12 +221,13 @@ export function calcWealth(
   investments:      InvestmentHolding[],
   investmentPurchases: InvestmentPurchase[],
   investmentValuationHistory: InvestmentValuationHistory[],
+  marketQuotes?: InvestmentMarketQuoteMap,
   asOfIso = currentIsoDate(),
 ): WealthCalc {
   const propertyAssets      = totalPropertyValue(properties, asOfIso);
   const savingsAssets        = totalSavingsBalance(savingsAccounts);
   const pensionAssets        = totalPensionBalance(pensions);
-  const investmentAssets     = totalInvestmentValue(investments, investmentPurchases, investmentValuationHistory);
+  const investmentAssets     = totalInvestmentValue(investments, investmentPurchases, investmentValuationHistory, marketQuotes);
   const mortgageLiabilities  = totalMortgageLiabilities(mortgages, mortgagePayments, asOfIso);
   const debtLiabilities      = totalDebtBalance(debts);
 

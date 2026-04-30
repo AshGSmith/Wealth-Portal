@@ -13,6 +13,7 @@ import type {
   MortgagePayment,
   Pension,
   PensionHistory,
+  PensionPayment,
   Pot,
   Property,
   SalaryHistory,
@@ -45,6 +46,7 @@ export const MOCK_DEBT_TRANSACTIONS: DebtTransaction[] = [];
 export const MOCK_DEBT_HISTORY: DebtHistory[] = [];
 export const MOCK_PENSIONS: Pension[] = [];
 export const MOCK_PENSION_HISTORY: PensionHistory[] = [];
+export const MOCK_PENSION_PAYMENTS: PensionPayment[] = [];
 export const MOCK_INVESTMENTS: InvestmentHolding[] = [];
 export const MOCK_INVESTMENT_PURCHASES: InvestmentPurchase[] = [];
 export const MOCK_INVESTMENT_VALUATION_HISTORY: InvestmentValuationHistory[] = [];

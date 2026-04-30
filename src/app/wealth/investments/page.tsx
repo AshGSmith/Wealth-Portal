@@ -18,6 +18,12 @@ import InvestmentPurchaseForm from '@/components/wealth/InvestmentPurchaseForm';
 import InvestmentValuationForm from '@/components/wealth/InvestmentValuationForm';
 import type { AccessibleUser } from '@/lib/auth/types';
 import { fmtCurrency } from '@/lib/format';
+import {
+  purchaseExchangeRateNote,
+  purchasePerShareSummary,
+  resolveInvestmentCurrentValue,
+  useInvestmentMarketQuotes,
+} from '@/lib/investmentCalc';
 import { useStore } from '@/lib/store';
 import type { InvestmentHolding, InvestmentPurchase, InvestmentValuationHistory } from '@/lib/types';
 
@@ -34,17 +40,9 @@ function ownershipSummary(ownerUserIds: string[], accessibleUsers: AccessibleUse
   return { label: 'Personal', detail: owner?.name ?? 'Assigned to you' };
 }
 
-function totalInvestedFor(
-  investmentId: string,
-  purchases: InvestmentPurchase[],
-): number {
-  return purchases
-    .filter(entry => entry.investmentId === investmentId)
-    .reduce((sum, entry) => sum + entry.amountInvested, 0);
-}
-
 export default function InvestmentsPage() {
   const store = useStore();
+  const marketQuotes = useInvestmentMarketQuotes(store.investments, store.investmentPurchases);
   const [editing, setEditing] = useState<InvestmentHolding | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
@@ -105,6 +103,7 @@ export default function InvestmentsPage() {
                 .filter(entry => entry.investmentId === investment.id)
                 .sort((a, b) => b.valuationDate.localeCompare(a.valuationDate))}
               accessibleUsers={store.accessibleUsers}
+              marketQuotes={marketQuotes}
               onEdit={() => openEdit(investment)}
               onAddPurchase={() => setPurchaseInvestment(investment)}
               onAddValuation={() => setValuationInvestment(investment)}
@@ -138,6 +137,7 @@ export default function InvestmentsPage() {
                     .filter(entry => entry.investmentId === investment.id)
                     .sort((a, b) => b.valuationDate.localeCompare(a.valuationDate))}
                   accessibleUsers={store.accessibleUsers}
+                  marketQuotes={marketQuotes}
                   onEdit={() => openEdit(investment)}
                   onRestore={() => store.setInvestmentArchived(investment.id, false)}
                   onDelete={() => store.removeInvestment(investment.id)}
@@ -165,6 +165,7 @@ export default function InvestmentsPage() {
       />
 
       <InvestmentPurchaseForm
+        key={`${purchaseInvestment?.id ?? 'none'}-${purchaseInvestment ? 'open' : 'closed'}`}
         investmentId={purchaseInvestment?.id ?? null}
         investmentName={purchaseInvestment?.name ?? ''}
         open={purchaseInvestment !== null}
@@ -173,6 +174,7 @@ export default function InvestmentsPage() {
       />
 
       <InvestmentValuationForm
+        key={`${valuationInvestment?.id ?? 'none'}-${valuationInvestment ? 'open' : 'closed'}`}
         investmentId={valuationInvestment?.id ?? null}
         investmentName={valuationInvestment?.name ?? ''}
         open={valuationInvestment !== null}
@@ -188,6 +190,7 @@ interface InvestmentRowProps {
   purchases: InvestmentPurchase[];
   valuations: InvestmentValuationHistory[];
   accessibleUsers: AccessibleUser[];
+  marketQuotes: ReturnType<typeof useInvestmentMarketQuotes>;
   onEdit: () => void;
   onAddPurchase?: () => void;
   onAddValuation?: () => void;
@@ -202,6 +205,7 @@ function InvestmentRow({
   purchases,
   valuations,
   accessibleUsers,
+  marketQuotes,
   onEdit,
   onAddPurchase,
   onAddValuation,
@@ -212,15 +216,16 @@ function InvestmentRow({
 }: InvestmentRowProps) {
   const [expanded, setExpanded] = useState(false);
   const ownership = ownershipSummary(investment.ownerUserIds, accessibleUsers);
+  const resolved = resolveInvestmentCurrentValue(investment, purchases, valuations, marketQuotes);
   const latestValuation = valuations[0] ?? null;
-  const totalInvested = totalInvestedFor(investment.id, purchases);
-  const currentValue = latestValuation?.currentValue ?? 0;
+  const totalInvested = resolved.totalInvested;
+  const currentValue = resolved.currentValue;
   const gainLoss = currentValue - totalInvested;
-  const hasValuation = latestValuation !== null;
+  const hasValueSource = resolved.source !== 'cost' || totalInvested > 0;
   const gainLossPct = totalInvested > 0 ? (gainLoss / totalInvested) * 100 : null;
 
   return (
-    <div className="rounded-xl border p-4" style={{ background: 'var(--surface)', borderColor: 'var(--border)' }}>
+    <div id={investment.id} className="rounded-xl border p-4" style={{ background: 'var(--surface)', borderColor: 'var(--border)' }}>
       <div className="flex items-start justify-between gap-3">
         <button
           onClick={() => setExpanded(value => !value)}
@@ -253,7 +258,7 @@ function InvestmentRow({
               {ownership.label}
               {ownership.detail ? ` · ${ownership.detail}` : ''}
             </p>
-            {gainLossPct !== null && hasValuation && (
+            {gainLossPct !== null && hasValueSource && (
               <p className="mt-1 text-[11px] font-medium" style={{ color: gainLoss >= 0 ? '#10b981' : '#f43f5e' }}>
                 {gainLoss >= 0 ? '+' : ''}{gainLossPct.toFixed(1)}%
               </p>
@@ -317,8 +322,14 @@ function InvestmentRow({
       <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
         <Tile
           title="Current value"
-          value={hasValuation ? fmtCurrency(currentValue) : '—'}
-          subtitle={hasValuation ? latestValuation.valuationDate : 'No valuation yet'}
+          value={hasValueSource ? fmtCurrency(currentValue) : '—'}
+          subtitle={
+            resolved.source === 'market'
+              ? `Live quote ${resolved.marketQuote?.asOf ?? ''}`.trim()
+              : resolved.source === 'manual'
+                ? latestValuation?.valuationDate ?? 'Manual valuation'
+                : 'Cost basis fallback'
+          }
           size="sm"
           surface="subtle"
           titleClassName="text-[10px] font-medium uppercase tracking-wide"
@@ -334,12 +345,12 @@ function InvestmentRow({
         />
         <Tile
           title="Gain / Loss"
-          value={hasValuation ? `${gainLoss >= 0 ? '+' : ''}${fmtCurrency(gainLoss)}` : '—'}
+          value={hasValueSource ? `${gainLoss >= 0 ? '+' : ''}${fmtCurrency(gainLoss)}` : '—'}
           size="sm"
           surface="subtle"
           titleClassName="text-[10px] font-medium uppercase tracking-wide"
           valueClassName="text-sm font-bold"
-          valueStyle={hasValuation ? { color: gainLoss >= 0 ? '#10b981' : '#f43f5e' } : undefined}
+          valueStyle={hasValueSource ? { color: gainLoss >= 0 ? '#10b981' : '#f43f5e' } : undefined}
         />
       </div>
 
@@ -371,10 +382,12 @@ function InvestmentRow({
               id: entry.id,
               date: entry.purchaseDate,
               primary: fmtCurrency(entry.amountInvested),
-              secondary: entry.sharesPurchased !== null
-                ? `${entry.sharesPurchased} shares`
-                : entry.note?.trim() || null,
-              note: entry.sharesPurchased !== null && entry.note?.trim() ? entry.note.trim() : null,
+              secondary: [entry.sharesPurchased !== null ? `${entry.sharesPurchased} shares` : null, purchasePerShareSummary(entry)]
+                .filter(Boolean)
+                .join(' · ') || null,
+              note: [entry.note?.trim() || null, purchaseExchangeRateNote(entry)]
+                .filter(Boolean)
+                .join(' · ') || null,
             }))}
           />
 

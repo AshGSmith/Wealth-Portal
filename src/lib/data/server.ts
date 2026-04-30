@@ -17,6 +17,7 @@ import type {
   MortgagePayment,
   Pension,
   PensionHistory,
+  PensionPayment,
   Pot,
   Property,
   SalaryHistory,
@@ -52,6 +53,7 @@ export interface PersistedAppData {
   debtHistory: DebtHistory[];
   pensions: Pension[];
   pensionHistory: PensionHistory[];
+  pensionPayments: PensionPayment[];
   investments: InvestmentHolding[];
   investmentPurchases: InvestmentPurchase[];
   investmentValuationHistory: InvestmentValuationHistory[];
@@ -101,6 +103,7 @@ export function emptyPersistedAppData(): PersistedAppData {
     debtHistory: [],
     pensions: [],
     pensionHistory: [],
+    pensionPayments: [],
     investments: [],
     investmentPurchases: [],
     investmentValuationHistory: [],
@@ -133,6 +136,7 @@ export function normalizePersistedAppData(value: unknown): PersistedAppData {
     debtHistory: readArray<DebtHistory>(raw.debtHistory),
     pensions: readArray<Pension>(raw.pensions),
     pensionHistory: readArray<PensionHistory>(raw.pensionHistory),
+    pensionPayments: readArray<PensionPayment>(raw.pensionPayments),
     investments: readArray<InvestmentHolding>(raw.investments),
     investmentPurchases: readArray<InvestmentPurchase>(raw.investmentPurchases),
     investmentValuationHistory: readArray<InvestmentValuationHistory>(raw.investmentValuationHistory),
@@ -325,6 +329,7 @@ export function filterPersistedAppDataForUser(
     debtHistory: data.debtHistory.filter(entry => debtIds.has(entry.debtId as string)),
     pensions,
     pensionHistory: data.pensionHistory.filter(entry => pensionIds.has(entry.pensionId as string)),
+    pensionPayments: data.pensionPayments.filter(entry => pensionIds.has(entry.pensionId as string)),
     investments,
     investmentPurchases: data.investmentPurchases.filter(entry => investmentIds.has(entry.investmentId as string)),
     investmentValuationHistory: data.investmentValuationHistory.filter(entry => investmentIds.has(entry.investmentId as string)),
@@ -364,6 +369,7 @@ export function savePersistedAppDataForUser(
     debtHistory: mergeLinkedRecords(current.debtHistory, nextVisibleData.debtHistory, visibleDebtIds),
     pensions: mergeOwnedRecords(current.pensions, nextVisibleData.pensions, accessibleUserIds),
     pensionHistory: mergeLinkedRecords(current.pensionHistory, nextVisibleData.pensionHistory, visiblePensionIds),
+    pensionPayments: mergeLinkedRecords(current.pensionPayments, nextVisibleData.pensionPayments, visiblePensionIds),
     investments: mergeOwnedRecords(current.investments, nextVisibleData.investments, accessibleUserIds),
     investmentPurchases: mergeLinkedRecords(current.investmentPurchases, nextVisibleData.investmentPurchases, visibleInvestmentIds),
     investmentValuationHistory: mergeLinkedRecords(current.investmentValuationHistory, nextVisibleData.investmentValuationHistory, visibleInvestmentIds),

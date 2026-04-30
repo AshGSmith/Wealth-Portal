@@ -4,9 +4,11 @@ import { useState } from 'react';
 import { Plus, Pencil, Archive, ArchiveRestore, ChevronDown, ChevronRight, Briefcase, Trash2 } from 'lucide-react';
 import PageHeader from '@/components/layout/PageHeader';
 import PensionForm from '@/components/wealth/PensionForm';
+import PensionPaymentForm from '@/components/wealth/PensionPaymentForm';
 import type { AccessibleUser } from '@/lib/auth/types';
 import { useStore } from '@/lib/store';
-import type { Pension, PensionHistory, PensionHistoryId } from '@/lib/types';
+import { pensionReturnFromInitialInvestment, totalPensionContributionsForPension } from '@/lib/wealthCalc';
+import type { Pension, PensionHistory, PensionHistoryId, PensionPayment } from '@/lib/types';
 import { fmtCurrency } from '@/lib/format';
 
 function makeHistoryEntry(old: Pension): PensionHistory {
@@ -24,6 +26,7 @@ export default function PensionsPage() {
   const [editing,      setEditing]      = useState<Pension | null>(null);
   const [showForm,     setShowForm]     = useState(false);
   const [showArchived, setShowArchived] = useState(false);
+  const [paymentPension, setPaymentPension] = useState<Pension | null>(null);
 
   const active   = store.pensions.filter(p => !p.archived);
   const archived = store.pensions.filter(p =>  p.archived);
@@ -42,6 +45,11 @@ export default function PensionsPage() {
   const historyFor = (id: string) =>
     store.pensionHistory
       .filter(h => h.pensionId === id)
+      .sort((a, b) => b.date.localeCompare(a.date));
+
+  const paymentsFor = (id: string) =>
+    store.pensionPayments
+      .filter(payment => payment.pensionId === id)
       .sort((a, b) => b.date.localeCompare(a.date));
 
   const actions = (
@@ -77,8 +85,10 @@ export default function PensionsPage() {
               key={p.id}
               pension={p}
               history={historyFor(p.id)}
+              payments={paymentsFor(p.id)}
               accessibleUsers={store.accessibleUsers}
               onEdit={() => openEdit(p)}
+              onAddPayment={() => setPaymentPension(p)}
               onArchive={() => store.setPensionArchived(p.id, true)}
             />
           ))}
@@ -102,6 +112,7 @@ export default function PensionsPage() {
                   key={p.id}
                   pension={p}
                   history={historyFor(p.id)}
+                  payments={paymentsFor(p.id)}
                   accessibleUsers={store.accessibleUsers}
                   onEdit={() => openEdit(p)}
                   onRestore={() => store.setPensionArchived(p.id, false)}
@@ -127,6 +138,15 @@ export default function PensionsPage() {
         ownerOptions={store.accessibleUsers}
         currentUserId={store.currentUserId}
       />
+
+      <PensionPaymentForm
+        key={`${paymentPension?.id ?? 'none'}-${paymentPension ? 'open' : 'closed'}`}
+        pensionId={paymentPension?.id ?? null}
+        pensionName={paymentPension?.name ?? ''}
+        open={paymentPension !== null}
+        onClose={() => setPaymentPension(null)}
+        onSave={payment => store.upsertPensionPayment(payment)}
+      />
     </>
   );
 }
@@ -136,8 +156,10 @@ export default function PensionsPage() {
 interface RowProps {
   pension:    Pension;
   history:    PensionHistory[];
+  payments:   PensionPayment[];
   accessibleUsers: AccessibleUser[];
   onEdit:     () => void;
+  onAddPayment?: () => void;
   onArchive?: () => void;
   onRestore?: () => void;
   onDelete?: () => void;
@@ -157,12 +179,23 @@ function ownershipSummary(ownerUserIds: string[], accessibleUsers: AccessibleUse
   return { label: 'Personal', detail: owner?.name ?? 'Assigned to you' };
 }
 
-function PensionRow({ pension: p, history, accessibleUsers, onEdit, onArchive, onRestore, onDelete, isArchived }: RowProps) {
+function PensionRow({ pension: p, history, payments, accessibleUsers, onEdit, onAddPayment, onArchive, onRestore, onDelete, isArchived }: RowProps) {
   const [expanded, setExpanded] = useState(false);
 
-  const prev   = history[0];
-  const change = prev ? p.currentBalance - prev.balance : null;
-  const isGain = change !== null && change >= 0;
+  const totalContributed = totalPensionContributionsForPension(p.id, payments);
+  const initialInvestmentReturn = pensionReturnFromInitialInvestment(p);
+  const contributionReturn = totalContributed > 0 ? p.currentBalance - totalContributed : null;
+  const previousSnapshot = history[0] ?? null;
+  const historicalChange = previousSnapshot ? p.currentBalance - previousSnapshot.balance : null;
+  const roiValue = initialInvestmentReturn ?? contributionReturn ?? historicalChange;
+  const roiLabel = initialInvestmentReturn !== null
+    ? 'vs initial'
+    : contributionReturn !== null
+      ? 'vs contributed'
+      : historicalChange !== null
+        ? 'vs prior'
+        : null;
+  const isGain = (roiValue ?? 0) >= 0;
   const ownership = ownershipSummary(p.ownerUserIds, accessibleUsers);
 
   return (
@@ -181,15 +214,25 @@ function PensionRow({ pension: p, history, accessibleUsers, onEdit, onArchive, o
           <p className="text-xs mt-0.5" style={{ color: 'var(--muted)' }}>
             {p.provider} · {ownership.label}
           </p>
+          {p.initialInvestment !== null ? (
+            <p className="mt-1 text-[11px]" style={{ color: 'var(--muted)' }}>
+              Initial {fmtCurrency(p.initialInvestment)}
+            </p>
+          ) : totalContributed > 0 ? (
+            <p className="mt-1 text-[11px]" style={{ color: 'var(--muted)' }}>
+              Contributed {fmtCurrency(totalContributed)}
+            </p>
+          ) : null}
         </div>
 
         <div className="text-right shrink-0">
           <p className="text-sm font-bold" style={{ color: 'var(--foreground)' }}>
             {fmtCurrency(p.currentBalance)}
           </p>
-          {change !== null && change !== 0 && (
+          {roiValue !== null && (
             <p className="text-xs" style={{ color: isGain ? '#10b981' : '#f43f5e' }}>
-              {isGain ? '+' : ''}{fmtCurrency(change)}
+              {isGain ? '+' : ''}{fmtCurrency(roiValue)}
+              {roiLabel ? ` ${roiLabel}` : ''}
             </p>
           )}
         </div>
@@ -201,6 +244,14 @@ function PensionRow({ pension: p, history, accessibleUsers, onEdit, onArchive, o
             onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
             <Pencil size={13} />
           </button>
+          {!isArchived && onAddPayment && (
+            <button onClick={onAddPayment}
+              className="rounded-lg p-1.5 transition-colors" style={{ color: 'var(--muted)' }} title="Log contribution"
+              onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-hover)')}
+              onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
+              <Plus size={13} />
+            </button>
+          )}
           {isArchived ? (
             <>
               <button onClick={onRestore}
@@ -228,7 +279,7 @@ function PensionRow({ pension: p, history, accessibleUsers, onEdit, onArchive, o
       </div>
 
       {/* History toggle */}
-      {history.length > 0 && (
+      {(history.length > 0 || payments.length > 0) && (
         <button
           onClick={() => setExpanded(v => !v)}
           className="w-full flex items-center justify-between px-4 py-2 border-t text-xs transition-colors"
@@ -244,29 +295,69 @@ function PensionRow({ pension: p, history, accessibleUsers, onEdit, onArchive, o
         </button>
       )}
 
-      {/* Balance history */}
-      {expanded && history.length > 0 && (
+      {expanded && (
         <div>
-          <div className="grid px-4 py-2 text-[10px] font-semibold uppercase tracking-wide"
-            style={{ gridTemplateColumns: '1fr auto', color: 'var(--muted)' }}>
-            <span>Date</span>
-            <span>Balance</span>
-          </div>
-          <div className="divide-y" style={{ borderColor: 'var(--border)' }}>
-            {history.map(h => (
-              <div key={h.id} className="grid px-4 py-2.5 text-sm"
-                style={{ gridTemplateColumns: '1fr auto' }}>
-                <span style={{ color: 'var(--muted)' }}>
-                  {new Date(h.date + 'T00:00:00').toLocaleDateString('en-GB', {
-                    day: 'numeric', month: 'short', year: 'numeric',
-                  })}
-                </span>
-                <span className="font-semibold tabular-nums" style={{ color: 'var(--foreground)' }}>
-                  {fmtCurrency(h.balance)}
-                </span>
+          {payments.length > 0 && (
+            <div className="border-t" style={{ borderColor: 'var(--border)' }}>
+              <div className="grid px-4 py-2 text-[10px] font-semibold uppercase tracking-wide"
+                style={{ gridTemplateColumns: '1fr auto auto', color: 'var(--muted)' }}>
+                <span>Contribution</span>
+                <span>Employee</span>
+                <span>Employer</span>
               </div>
-            ))}
-          </div>
+              <div className="divide-y" style={{ borderColor: 'var(--border)' }}>
+                {payments.map(payment => (
+                  <div key={payment.id} className="space-y-1 px-4 py-2.5 text-sm">
+                    <div className="grid items-center gap-3" style={{ gridTemplateColumns: '1fr auto auto' }}>
+                      <div className="min-w-0">
+                        <span style={{ color: 'var(--muted)' }}>
+                          {new Date(payment.date + 'T00:00:00').toLocaleDateString('en-GB', {
+                            day: 'numeric', month: 'short', year: 'numeric',
+                          })}
+                        </span>
+                        {payment.note && (
+                          <p className="mt-0.5 truncate text-[11px]" style={{ color: 'var(--muted)' }}>
+                            {payment.note}
+                          </p>
+                        )}
+                      </div>
+                      <span className="font-semibold tabular-nums" style={{ color: 'var(--foreground)' }}>
+                        {fmtCurrency(payment.employeeContribution)}
+                      </span>
+                      <span className="font-semibold tabular-nums" style={{ color: 'var(--foreground)' }}>
+                        {fmtCurrency(payment.employerContribution)}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {history.length > 0 && (
+            <div className="border-t" style={{ borderColor: 'var(--border)' }}>
+              <div className="grid px-4 py-2 text-[10px] font-semibold uppercase tracking-wide"
+                style={{ gridTemplateColumns: '1fr auto', color: 'var(--muted)' }}>
+                <span>Balance Snapshot</span>
+                <span>Balance</span>
+              </div>
+              <div className="divide-y" style={{ borderColor: 'var(--border)' }}>
+                {history.map(h => (
+                  <div key={h.id} className="grid px-4 py-2.5 text-sm"
+                    style={{ gridTemplateColumns: '1fr auto' }}>
+                    <span style={{ color: 'var(--muted)' }}>
+                      {new Date(h.date + 'T00:00:00').toLocaleDateString('en-GB', {
+                        day: 'numeric', month: 'short', year: 'numeric',
+                      })}
+                    </span>
+                    <span className="font-semibold tabular-nums" style={{ color: 'var(--foreground)' }}>
+                      {fmtCurrency(h.balance)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>

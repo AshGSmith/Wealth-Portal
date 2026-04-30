@@ -14,9 +14,18 @@ export type InvestmentMarketQuote = {
   priceGbp: number;
   asOf: string;
   source: string;
+  exchangeRateToGbp: number;
+  exchangeRateDate: string;
 };
 
 export type InvestmentMarketQuoteMap = Record<string, InvestmentMarketQuote | null>;
+export type InvestmentMarketQuoteError = {
+  symbol: string;
+  code: 'missing_symbol' | 'missing_api_key' | 'provider_error' | 'ticker_not_found' | 'rate_limited' | 'network_error' | 'unsupported_currency' | 'exchange_rate_error';
+  message: string;
+  provider?: string;
+};
+export type InvestmentMarketQuoteErrorMap = Record<string, InvestmentMarketQuoteError | null>;
 
 export type InvestmentDropAlert = {
   investmentId: string;
@@ -46,7 +55,7 @@ type ResolvedInvestmentValue = {
 };
 
 const QUOTE_CACHE_TTL_MS = 15 * 60 * 1000;
-const quoteCache = new Map<string, { fetchedAt: number; quote: InvestmentMarketQuote | null }>();
+const quoteCache = new Map<string, { fetchedAt: number; quote: InvestmentMarketQuote | null; error: InvestmentMarketQuoteError | null }>();
 
 function monthStartFromDate(date: string): string {
   return date.slice(0, 7);
@@ -304,10 +313,10 @@ export function purchaseExchangeRateNote(entry: InvestmentPurchase): string | nu
   return `USD→GBP ${entry.exchangeRateToGbp.toFixed(4)}${entry.exchangeRateDate ? ` on ${entry.exchangeRateDate}` : ''}`;
 }
 
-async function fetchMarketQuote(symbol: string): Promise<InvestmentMarketQuote | null> {
+async function fetchMarketQuote(symbol: string): Promise<{ quote: InvestmentMarketQuote | null; error: InvestmentMarketQuoteError | null }> {
   const cached = quoteCache.get(symbol);
   if (cached && (Date.now() - cached.fetchedAt) < QUOTE_CACHE_TTL_MS) {
-    return cached.quote;
+    return { quote: cached.quote, error: cached.error };
   }
 
   try {
@@ -315,26 +324,38 @@ async function fetchMarketQuote(symbol: string): Promise<InvestmentMarketQuote |
       cache: 'no-store',
     });
 
-    if (!response.ok) {
-      quoteCache.set(symbol, { fetchedAt: Date.now(), quote: null });
-      return null;
+    const payload = await response.json() as InvestmentMarketQuote | InvestmentMarketQuoteError | { message?: string };
+
+    if (response.ok && 'price' in payload) {
+      quoteCache.set(symbol, { fetchedAt: Date.now(), quote: payload, error: null });
+      return { quote: payload, error: null };
     }
 
-    const quote = await response.json() as InvestmentMarketQuote | { message?: string };
-    const normalized = 'price' in quote ? quote : null;
-    quoteCache.set(symbol, { fetchedAt: Date.now(), quote: normalized });
-    return normalized;
+    const error = {
+      symbol,
+      code: 'code' in payload ? payload.code : 'provider_error',
+      message: 'message' in payload && payload.message ? payload.message : 'Failed to load live market quote.',
+      provider: 'provider' in payload ? payload.provider : undefined,
+    } satisfies InvestmentMarketQuoteError;
+    quoteCache.set(symbol, { fetchedAt: Date.now(), quote: null, error });
+    return { quote: null, error };
   } catch {
-    quoteCache.set(symbol, { fetchedAt: Date.now(), quote: null });
-    return null;
+    const error = {
+      symbol,
+      code: 'network_error',
+      message: 'Failed to load live market quote due to a network error.',
+    } satisfies InvestmentMarketQuoteError;
+    quoteCache.set(symbol, { fetchedAt: Date.now(), quote: null, error });
+    return { quote: null, error };
   }
 }
 
-export function useInvestmentMarketQuotes(
+export function useInvestmentMarketData(
   investments: InvestmentHolding[],
   purchases: InvestmentPurchase[],
-): InvestmentMarketQuoteMap {
+): { quotes: InvestmentMarketQuoteMap; errors: InvestmentMarketQuoteErrorMap } {
   const [quotes, setQuotes] = useState<InvestmentMarketQuoteMap>({});
+  const [errors, setErrors] = useState<InvestmentMarketQuoteErrorMap>({});
 
   const eligibleSymbols = useMemo(() => {
     return [...new Set(
@@ -358,8 +379,16 @@ export function useInvestmentMarketQuotes(
 
       setQuotes(prev => {
         const next: InvestmentMarketQuoteMap = { ...prev };
-        for (const [symbol, quote] of nextEntries) {
-          next[symbol] = quote;
+        for (const [symbol, result] of nextEntries) {
+          next[symbol] = result.quote;
+        }
+        return next;
+      });
+
+      setErrors(prev => {
+        const next: InvestmentMarketQuoteErrorMap = { ...prev };
+        for (const [symbol, result] of nextEntries) {
+          next[symbol] = result.error;
         }
         return next;
       });
@@ -374,5 +403,25 @@ export function useInvestmentMarketQuotes(
     };
   }, [eligibleSymbols]);
 
-  return quotes;
+  return { quotes, errors };
+}
+
+export function useInvestmentMarketQuotes(
+  investments: InvestmentHolding[],
+  purchases: InvestmentPurchase[],
+): InvestmentMarketQuoteMap {
+  return useInvestmentMarketData(investments, purchases).quotes;
+}
+
+export function marketQuotePriceSummary(quote: InvestmentMarketQuote): string {
+  const gbpPart = new Intl.NumberFormat('en-GB', {
+    style: 'currency',
+    currency: 'GBP',
+  }).format(quote.priceGbp);
+
+  if (quote.currency === 'USD') {
+    return `${fmtUsdCurrency(quote.price)}/share (${gbpPart}/share)`;
+  }
+
+  return `${gbpPart}/share`;
 }

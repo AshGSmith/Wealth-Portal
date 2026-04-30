@@ -19,11 +19,12 @@ import InvestmentValuationForm from '@/components/wealth/InvestmentValuationForm
 import type { AccessibleUser } from '@/lib/auth/types';
 import { fmtCurrency } from '@/lib/format';
 import {
+  marketQuotePriceSummary,
   purchaseExchangeRateNote,
   purchasePerShareSummary,
   resolveInvestmentCurrentValue,
   totalSharesHeldForInvestment,
-  useInvestmentMarketQuotes,
+  useInvestmentMarketData,
 } from '@/lib/investmentCalc';
 import { useStore } from '@/lib/store';
 import type { InvestmentHolding, InvestmentPurchase, InvestmentValuationHistory } from '@/lib/types';
@@ -43,7 +44,7 @@ function ownershipSummary(ownerUserIds: string[], accessibleUsers: AccessibleUse
 
 export default function InvestmentsPage() {
   const store = useStore();
-  const marketQuotes = useInvestmentMarketQuotes(store.investments, store.investmentPurchases);
+  const { quotes: marketQuotes, errors: marketQuoteErrors } = useInvestmentMarketData(store.investments, store.investmentPurchases);
   const [editing, setEditing] = useState<InvestmentHolding | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
@@ -105,6 +106,7 @@ export default function InvestmentsPage() {
                 .sort((a, b) => b.valuationDate.localeCompare(a.valuationDate))}
               accessibleUsers={store.accessibleUsers}
               marketQuotes={marketQuotes}
+              marketQuoteErrors={marketQuoteErrors}
               onEdit={() => openEdit(investment)}
               onAddPurchase={() => setPurchaseInvestment(investment)}
               onAddValuation={() => setValuationInvestment(investment)}
@@ -139,6 +141,7 @@ export default function InvestmentsPage() {
                     .sort((a, b) => b.valuationDate.localeCompare(a.valuationDate))}
                   accessibleUsers={store.accessibleUsers}
                   marketQuotes={marketQuotes}
+                  marketQuoteErrors={marketQuoteErrors}
                   onEdit={() => openEdit(investment)}
                   onRestore={() => store.setInvestmentArchived(investment.id, false)}
                   onDelete={() => store.removeInvestment(investment.id)}
@@ -191,7 +194,8 @@ interface InvestmentRowProps {
   purchases: InvestmentPurchase[];
   valuations: InvestmentValuationHistory[];
   accessibleUsers: AccessibleUser[];
-  marketQuotes: ReturnType<typeof useInvestmentMarketQuotes>;
+  marketQuotes: ReturnType<typeof useInvestmentMarketData>['quotes'];
+  marketQuoteErrors: ReturnType<typeof useInvestmentMarketData>['errors'];
   onEdit: () => void;
   onAddPurchase?: () => void;
   onAddValuation?: () => void;
@@ -207,6 +211,7 @@ function InvestmentRow({
   valuations,
   accessibleUsers,
   marketQuotes,
+  marketQuoteErrors,
   onEdit,
   onAddPurchase,
   onAddValuation,
@@ -228,10 +233,11 @@ function InvestmentRow({
   const sharesHeld = totalSharesHeldForInvestment(investment.id, purchases);
   const liveQuoteRequested = symbolKey.length > 0 && sharesHeld !== null;
   const liveQuoteFailed = liveQuoteRequested && Object.prototype.hasOwnProperty.call(marketQuotes, symbolKey) && marketQuotes[symbolKey] === null;
+  const liveQuoteError = liveQuoteRequested ? marketQuoteErrors[symbolKey] ?? null : null;
   const currentValueSubtitle = resolved.source === 'market'
-    ? `Live quote ${resolved.marketQuote?.asOf ?? ''}`.trim()
+    ? `${marketQuotePriceSummary(resolved.marketQuote!)} · ${resolved.marketQuote?.source} · ${resolved.marketQuote?.asOf}`.trim()
     : liveQuoteFailed
-      ? `Live quote unavailable for ${symbolKey}`
+      ? liveQuoteError?.message ?? `Live quote unavailable for ${symbolKey}`
       : resolved.source === 'manual'
         ? latestValuation?.valuationDate ?? 'Manual valuation'
         : 'Cost basis fallback';
@@ -367,7 +373,7 @@ function InvestmentRow({
               className="rounded-xl border px-3 py-2 text-xs"
               style={{ background: '#78350f14', borderColor: '#f59e0b55', color: 'var(--muted)' }}
             >
-              Live market quote unavailable for <span style={{ color: 'var(--foreground)' }}>{symbolKey}</span>. Using {resolved.source === 'manual' ? 'your latest manual valuation' : 'cost basis fallback'} instead.
+              Live market quote unavailable for <span style={{ color: 'var(--foreground)' }}>{symbolKey}</span>: {liveQuoteError?.message ?? 'provider lookup failed'}. Using {resolved.source === 'manual' ? 'your latest manual valuation' : 'cost basis fallback'} instead.
             </div>
           )}
           {!isArchived && (

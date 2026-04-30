@@ -6,12 +6,13 @@ import ReportSection from '@/components/reports/ReportSection';
 import Tile from '@/components/ui/Tile';
 import { fmtCurrency } from '@/lib/format';
 import {
+  marketQuotePriceSummary,
   purchaseExchangeRateNote,
   purchasePerShareSummary,
   resolveInvestmentCurrentValue,
   totalInvestedForInvestment,
   totalSharesHeldForInvestment,
-  useInvestmentMarketQuotes,
+  useInvestmentMarketData,
 } from '@/lib/investmentCalc';
 import { useStore } from '@/lib/store';
 import { totalInvestmentValue } from '@/lib/wealthCalc';
@@ -31,7 +32,7 @@ function fmtPercentChange(value: number): string {
 export default function InvestmentInsightReportPage() {
   const store = useStore();
   const investments = store.investments.filter(investment => !investment.archived);
-  const marketQuotes = useInvestmentMarketQuotes(store.investments, store.investmentPurchases);
+  const { quotes: marketQuotes, errors: marketQuoteErrors } = useInvestmentMarketData(store.investments, store.investmentPurchases);
   const totalInvested = investments.reduce(
     (sum, investment) => sum + totalInvestedForInvestment(investment.id, store.investmentPurchases),
     0,
@@ -92,6 +93,7 @@ export default function InvestmentInsightReportPage() {
               && sharesHeld !== null
               && Object.prototype.hasOwnProperty.call(marketQuotes, symbolKey)
               && marketQuotes[symbolKey] === null;
+            const liveQuoteError = liveQuoteFailed ? marketQuoteErrors[symbolKey] ?? null : null;
 
             return (
               <div
@@ -107,9 +109,9 @@ export default function InvestmentInsightReportPage() {
                     <p className="mt-0.5 text-xs" style={{ color: 'var(--muted)' }}>
                       {investment.tickerOrSymbol || 'No ticker'}
                       {investment.provider ? ` • ${investment.provider}` : ''}
-                      {resolved.source === 'market' && resolved.marketQuote ? ` • Live ${resolved.marketQuote.currency} quote ${resolved.marketQuote.asOf}` : ''}
+                      {resolved.source === 'market' && resolved.marketQuote ? ` • ${marketQuotePriceSummary(resolved.marketQuote)} • ${resolved.marketQuote.source} • ${resolved.marketQuote.asOf}` : ''}
                       {resolved.source === 'manual' ? ' • Manual valuation' : ''}
-                      {liveQuoteFailed ? ' • Live quote unavailable' : ''}
+                      {liveQuoteFailed ? ` • ${liveQuoteError?.message ?? 'Live quote unavailable'}` : ''}
                     </p>
                   </div>
                   <p className="shrink-0 text-sm font-semibold tabular-nums" style={{ color: '#0ea5e9' }}>

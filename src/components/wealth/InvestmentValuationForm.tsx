@@ -57,6 +57,7 @@ export default function InvestmentValuationForm({
   }, [open, investmentId]);
 
   if (!investmentId) return null;
+  const currentInvestmentId = investmentId;
 
   function set<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm(prev => ({ ...prev, [key]: value }));
@@ -77,7 +78,7 @@ export default function InvestmentValuationForm({
 
     onSave({
       id: `inv-valuation-${Date.now()}` as unknown as InvestmentValuationHistoryId,
-      investmentId,
+      investmentId: currentInvestmentId,
       valuationDate: form.valuationDate as ISODate,
       currentValue: parseFloat(form.currentValue),
       note: form.note.trim() || null,

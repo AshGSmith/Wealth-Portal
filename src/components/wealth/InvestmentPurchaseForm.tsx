@@ -59,6 +59,7 @@ export default function InvestmentPurchaseForm({
   }, [open, investmentId]);
 
   if (!investmentId) return null;
+  const currentInvestmentId = investmentId;
 
   function set<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm(prev => ({ ...prev, [key]: value }));
@@ -82,7 +83,7 @@ export default function InvestmentPurchaseForm({
 
     onSave({
       id: `inv-purchase-${Date.now()}` as unknown as InvestmentPurchaseId,
-      investmentId,
+      investmentId: currentInvestmentId,
       purchaseDate: form.purchaseDate as ISODate,
       amountInvested: parseFloat(form.amountInvested),
       sharesPurchased: form.sharesPurchased.trim() ? parseFloat(form.sharesPurchased) : null,

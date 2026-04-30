@@ -95,7 +95,7 @@ export default function InvestmentInsightReportPage() {
                       {investment.name}
                     </p>
                     <p className="mt-0.5 text-xs" style={{ color: 'var(--muted)' }}>
-                      {investment.tickerOrSymbol}
+                      {investment.tickerOrSymbol || 'No ticker'}
                       {investment.provider ? ` • ${investment.provider}` : ''}
                     </p>
                   </div>

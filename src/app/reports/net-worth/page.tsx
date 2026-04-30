@@ -183,7 +183,7 @@ export default function NetWorthReportPage() {
           const totalInvested = totalInvestedFor(investment.id, store.investmentPurchases);
           const currentValue = latestValuation?.currentValue ?? totalInvested;
           const metaParts = [
-            investment.tickerOrSymbol,
+            investment.tickerOrSymbol || 'No ticker',
             investment.provider ?? undefined,
             latestValuation ? `Valued ${latestValuation.valuationDate}` : totalInvested > 0 ? 'Using total invested' : 'No valuation yet',
           ].filter(Boolean);

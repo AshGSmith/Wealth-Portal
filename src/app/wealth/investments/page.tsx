@@ -247,7 +247,7 @@ function InvestmentRow({
               )}
             </div>
             <p className="mt-0.5 text-xs" style={{ color: 'var(--muted)' }}>
-              {investment.tickerOrSymbol}
+              {investment.tickerOrSymbol || 'No ticker'}
               {investment.provider ? ` · ${investment.provider}` : ''}
               {' · '}
               {ownership.label}

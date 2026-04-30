@@ -76,7 +76,6 @@ export default function InvestmentForm({ investment, open, onClose, onSave, owne
   function validate(): boolean {
     const nextErrors: Partial<Record<keyof FormState, string>> = {};
     if (!form.name.trim()) nextErrors.name = 'Required';
-    if (!form.tickerOrSymbol.trim()) nextErrors.tickerOrSymbol = 'Required';
     if (form.ownerUserIds.length === 0) nextErrors.ownerUserIds = 'Required';
     if (!investment) {
       if (!form.purchaseDate) nextErrors.purchaseDate = 'Required';
@@ -157,7 +156,7 @@ export default function InvestmentForm({ investment, open, onClose, onSave, owne
 
         <div>
           <label className="mb-1.5 block text-xs font-medium" style={{ color: 'var(--muted)' }}>
-            Ticker or symbol <span className="text-rose-500">*</span>
+            Ticker or symbol <span style={{ color: 'var(--muted)' }}>(optional)</span>
           </label>
           <input
             type="text"
@@ -165,9 +164,8 @@ export default function InvestmentForm({ investment, open, onClose, onSave, owne
             onChange={event => set('tickerOrSymbol', event.target.value)}
             placeholder="e.g. VWRP"
             className={inputCls}
-            style={{ ...inputStyle, borderColor: errors.tickerOrSymbol ? '#f43f5e' : 'var(--border)' }}
+            style={inputStyle}
           />
-          {errors.tickerOrSymbol && <p className="mt-1 text-xs text-rose-500">{errors.tickerOrSymbol}</p>}
         </div>
 
         <div>

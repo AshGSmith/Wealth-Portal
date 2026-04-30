@@ -19,6 +19,8 @@ import InvestmentValuationForm from '@/components/wealth/InvestmentValuationForm
 import type { AccessibleUser } from '@/lib/auth/types';
 import { fmtCurrency } from '@/lib/format';
 import {
+  investmentSelectedInstrumentDisplayName,
+  investmentSelectedInstrumentSymbol,
   marketQuotePriceSummary,
   purchaseExchangeRateNote,
   purchasePerShareSummary,
@@ -172,6 +174,7 @@ export default function InvestmentsPage() {
         key={`${purchaseInvestment?.id ?? 'none'}-${purchaseInvestment ? 'open' : 'closed'}`}
         investmentId={purchaseInvestment?.id ?? null}
         investmentName={purchaseInvestment?.name ?? ''}
+        investment={purchaseInvestment}
         open={purchaseInvestment !== null}
         onClose={() => setPurchaseInvestment(null)}
         onSave={purchase => store.upsertInvestmentPurchase(purchase)}
@@ -229,8 +232,23 @@ function InvestmentRow({
   const gainLoss = currentValue - totalInvested;
   const hasValueSource = resolved.source !== 'cost' || totalInvested > 0;
   const gainLossPct = totalInvested > 0 ? (gainLoss / totalInvested) * 100 : null;
-  const symbolKey = investment.tickerOrSymbol.trim().toUpperCase();
+  const symbolKey = investmentSelectedInstrumentSymbol(investment);
+  const instrumentDisplayName = investmentSelectedInstrumentDisplayName(investment);
   const sharesHeld = totalSharesHeldForInvestment(investment.id, purchases);
+  const modeLabel = investment.selectedInstrument ? 'Live Instrument' : 'Manual Investment';
+  const instrumentMeta = [
+    modeLabel,
+    investment.selectedInstrument ? instrumentDisplayName : undefined,
+    investment.selectedInstrument?.symbol || undefined,
+    investment.selectedInstrument?.exchange ?? undefined,
+    investment.selectedInstrument?.currency ?? undefined,
+    !investment.selectedInstrument && investment.tickerOrSymbol.trim()
+      ? `Legacy ticker ${investment.tickerOrSymbol.trim().toUpperCase()}`
+      : undefined,
+    investment.provider ?? undefined,
+    ownership.label,
+    ownership.detail ? ownership.detail : undefined,
+  ].filter(Boolean).join(' · ');
   const liveQuoteRequested = symbolKey.length > 0 && sharesHeld !== null;
   const liveQuoteFailed = liveQuoteRequested && Object.prototype.hasOwnProperty.call(marketQuotes, symbolKey) && marketQuotes[symbolKey] === null;
   const liveQuoteError = liveQuoteRequested ? marketQuoteErrors[symbolKey] ?? null : null;
@@ -270,11 +288,7 @@ function InvestmentRow({
               )}
             </div>
             <p className="mt-0.5 text-xs" style={{ color: 'var(--muted)' }}>
-              {investment.tickerOrSymbol || 'No ticker'}
-              {investment.provider ? ` · ${investment.provider}` : ''}
-              {' · '}
-              {ownership.label}
-              {ownership.detail ? ` · ${ownership.detail}` : ''}
+              {instrumentMeta}
             </p>
             {gainLossPct !== null && hasValueSource && (
               <p className="mt-1 text-[11px] font-medium" style={{ color: gainLoss >= 0 ? '#10b981' : '#f43f5e' }}>
@@ -373,7 +387,7 @@ function InvestmentRow({
               className="rounded-xl border px-3 py-2 text-xs"
               style={{ background: '#78350f14', borderColor: '#f59e0b55', color: 'var(--muted)' }}
             >
-              Live market quote unavailable for <span style={{ color: 'var(--foreground)' }}>{symbolKey}</span>: {liveQuoteError?.message ?? 'provider lookup failed'}. Using {resolved.source === 'manual' ? 'your latest manual valuation' : 'cost basis fallback'} instead.
+              Live market quote unavailable for <span style={{ color: 'var(--foreground)' }}>{instrumentDisplayName}</span>{symbolKey ? ` (${symbolKey})` : ''}: {liveQuoteError?.message ?? 'provider lookup failed'}. Using {resolved.source === 'manual' ? 'your latest manual valuation' : 'cost basis fallback'} instead.
             </div>
           )}
           {!isArchived && (

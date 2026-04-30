@@ -324,6 +324,15 @@ export interface PensionPayment {
   note?:                 string | null;
 }
 
+export interface InvestmentInstrumentSelection {
+  symbol: string;
+  displayName: string;
+  exchange: string | null;
+  currency: string | null;
+  source: string | null;
+  sourceId: string | null;
+}
+
 /**
  * An investment holding such as a stock, fund, or ETF.
  * Parent of: InvestmentPurchase, InvestmentValuationHistory
@@ -332,6 +341,7 @@ export interface InvestmentHolding extends OwnedRecord {
   id:             InvestmentHoldingId;
   name:           string;
   tickerOrSymbol: string;
+  selectedInstrument: InvestmentInstrumentSelection | null;
   provider:       string | null;
   archived:       boolean;
 }

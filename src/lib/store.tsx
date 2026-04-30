@@ -617,8 +617,22 @@ function normalizePensionPayments(payments: PensionPayment[]): PensionPayment[] 
 }
 
 function normalizeInvestment(investment: InvestmentHolding, fallbackUserId: string | null): InvestmentHolding {
+  const selectedInstrument = investment.selectedInstrument
+    ? {
+        ...investment.selectedInstrument,
+        symbol: investment.selectedInstrument.symbol.trim().toUpperCase(),
+        displayName: investment.selectedInstrument.displayName.trim() || investment.name,
+        exchange: investment.selectedInstrument.exchange ?? null,
+        currency: investment.selectedInstrument.currency?.trim().toUpperCase() ?? null,
+        source: investment.selectedInstrument.source ?? null,
+        sourceId: investment.selectedInstrument.sourceId?.trim() ?? null,
+      }
+    : null;
+
   return {
     ...investment,
+    tickerOrSymbol: investment.tickerOrSymbol.trim().toUpperCase(),
+    selectedInstrument,
     provider: investment.provider ?? null,
     ownerUserIds: normalizeOwnerUserIds(investment.ownerUserIds, fallbackUserId),
   };

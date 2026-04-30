@@ -14,6 +14,9 @@ export type InvestmentMarketQuote = {
   priceGbp: number;
   asOf: string;
   source: string;
+  displayName: string | null;
+  exchange: string | null;
+  sourceId: string | null;
   exchangeRateToGbp: number;
   exchangeRateDate: string;
 };
@@ -56,6 +59,29 @@ type ResolvedInvestmentValue = {
 
 const QUOTE_CACHE_TTL_MS = 15 * 60 * 1000;
 const quoteCache = new Map<string, { fetchedAt: number; quote: InvestmentMarketQuote | null; error: InvestmentMarketQuoteError | null }>();
+
+export function investmentSelectedInstrumentSymbol(investment: InvestmentHolding): string {
+  return investment.selectedInstrument?.symbol?.trim().toUpperCase() ?? '';
+}
+
+export function investmentSelectedInstrumentDisplayName(investment: InvestmentHolding): string {
+  return investment.selectedInstrument?.displayName?.trim()
+    || investment.name
+    || investmentSelectedInstrumentSymbol(investment)
+    || 'Manual investment';
+}
+
+function investmentQuoteLookupMeta(investment: InvestmentHolding) {
+  const symbol = investmentSelectedInstrumentSymbol(investment);
+  return {
+    symbol,
+    displayName: investment.selectedInstrument?.displayName?.trim() || null,
+    exchange: investment.selectedInstrument?.exchange?.trim() || null,
+    currencyHint: investment.selectedInstrument?.currency?.trim().toUpperCase() || null,
+    source: investment.selectedInstrument?.source?.trim() || null,
+    sourceId: investment.selectedInstrument?.sourceId?.trim() || null,
+  };
+}
 
 function monthStartFromDate(date: string): string {
   return date.slice(0, 7);
@@ -124,7 +150,7 @@ export function resolveInvestmentCurrentValue(
   const totalInvested = totalInvestedForInvestment(investment.id, purchases);
   const totalSharesHeld = totalSharesHeldForInvestment(investment.id, purchases);
   const latestManualValuation = latestManualValuationForInvestment(investment.id, valuations);
-  const symbolKey = investment.tickerOrSymbol.trim().toUpperCase();
+  const symbolKey = investmentSelectedInstrumentSymbol(investment);
   const marketQuote = symbolKey ? marketQuotes?.[symbolKey] ?? null : null;
 
   if (marketQuote && totalSharesHeld !== null) {
@@ -258,7 +284,7 @@ export function combinedInvestmentValueTrend(
       const investedValue = investmentPurchases.reduce((total, entry) => total + entry.amountInvested, 0);
 
       if (isCurrentMonth) {
-        const symbolKey = investment.tickerOrSymbol.trim().toUpperCase();
+        const symbolKey = investmentSelectedInstrumentSymbol(investment);
         const marketQuote = symbolKey ? marketQuotes[symbolKey] ?? null : null;
         const sharesHeld = totalSharesHeldForInvestment(investment.id, activePurchases, monthEnd);
         if (marketQuote && sharesHeld !== null) {
@@ -313,14 +339,25 @@ export function purchaseExchangeRateNote(entry: InvestmentPurchase): string | nu
   return `USD→GBP ${entry.exchangeRateToGbp.toFixed(4)}${entry.exchangeRateDate ? ` on ${entry.exchangeRateDate}` : ''}`;
 }
 
-async function fetchMarketQuote(symbol: string): Promise<{ quote: InvestmentMarketQuote | null; error: InvestmentMarketQuoteError | null }> {
+async function fetchMarketQuote(
+  investment: InvestmentHolding,
+): Promise<{ quote: InvestmentMarketQuote | null; error: InvestmentMarketQuoteError | null }> {
+  const lookup = investmentQuoteLookupMeta(investment);
+  const symbol = lookup.symbol;
   const cached = quoteCache.get(symbol);
   if (cached && (Date.now() - cached.fetchedAt) < QUOTE_CACHE_TTL_MS) {
     return { quote: cached.quote, error: cached.error };
   }
 
   try {
-    const response = await fetch(`/api/market-data/investment-quote?symbol=${encodeURIComponent(symbol)}`, {
+    const params = new URLSearchParams({ symbol });
+    if (lookup.displayName) params.set('displayName', lookup.displayName);
+    if (lookup.exchange) params.set('exchange', lookup.exchange);
+    if (lookup.currencyHint) params.set('currencyHint', lookup.currencyHint);
+    if (lookup.source) params.set('source', lookup.source);
+    if (lookup.sourceId) params.set('sourceId', lookup.sourceId);
+
+    const response = await fetch(`/api/market-data/investment-quote?${params.toString()}`, {
       cache: 'no-store',
     });
 
@@ -357,14 +394,17 @@ export function useInvestmentMarketData(
   const [quotes, setQuotes] = useState<InvestmentMarketQuoteMap>({});
   const [errors, setErrors] = useState<InvestmentMarketQuoteErrorMap>({});
 
-  const eligibleSymbols = useMemo(() => {
-    return [...new Set(
+  const eligibleLookups = useMemo(() => {
+    return Object.values(
       investments
         .filter(investment => !investment.archived)
-        .filter(investment => investment.tickerOrSymbol.trim().length > 0)
+        .filter(investment => investmentSelectedInstrumentSymbol(investment).length > 0)
         .filter(investment => totalSharesHeldForInvestment(investment.id, purchases) !== null)
-        .map(investment => investment.tickerOrSymbol.trim().toUpperCase()),
-    )].sort();
+        .reduce<Record<string, InvestmentHolding>>((acc, investment) => {
+          acc[investmentSelectedInstrumentSymbol(investment)] = investment;
+          return acc;
+        }, {}),
+    ).sort((a, b) => investmentSelectedInstrumentSymbol(a).localeCompare(investmentSelectedInstrumentSymbol(b)));
   }, [investments, purchases]);
 
   useEffect(() => {
@@ -372,7 +412,7 @@ export function useInvestmentMarketData(
 
     async function loadQuotes() {
       const nextEntries = await Promise.all(
-        eligibleSymbols.map(async symbol => [symbol, await fetchMarketQuote(symbol)] as const),
+        eligibleLookups.map(async investment => [investmentSelectedInstrumentSymbol(investment), await fetchMarketQuote(investment)] as const),
       );
 
       if (cancelled) return;
@@ -394,14 +434,14 @@ export function useInvestmentMarketData(
       });
     }
 
-    if (eligibleSymbols.length > 0) {
+    if (eligibleLookups.length > 0) {
       void loadQuotes();
     }
 
     return () => {
       cancelled = true;
     };
-  }, [eligibleSymbols]);
+  }, [eligibleLookups]);
 
   return { quotes, errors };
 }

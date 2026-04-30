@@ -6,6 +6,8 @@ import ReportSection from '@/components/reports/ReportSection';
 import Tile from '@/components/ui/Tile';
 import { fmtCurrency } from '@/lib/format';
 import {
+  investmentSelectedInstrumentDisplayName,
+  investmentSelectedInstrumentSymbol,
   marketQuotePriceSummary,
   purchaseExchangeRateNote,
   purchasePerShareSummary,
@@ -87,7 +89,9 @@ export default function InvestmentInsightReportPage() {
             const currentValue = resolved.currentValue;
             const gainLoss = currentValue - totalInvestedForHolding;
             const gainLossPct = totalInvestedForHolding > 0 ? (gainLoss / totalInvestedForHolding) * 100 : null;
-            const symbolKey = investment.tickerOrSymbol.trim().toUpperCase();
+            const symbolKey = investmentSelectedInstrumentSymbol(investment);
+            const instrumentDisplayName = investmentSelectedInstrumentDisplayName(investment);
+            const modeLabel = investment.selectedInstrument ? 'Live Instrument' : 'Manual Investment';
             const sharesHeld = totalSharesHeldForInvestment(investment.id, purchases);
             const liveQuoteFailed = symbolKey.length > 0
               && sharesHeld !== null
@@ -107,7 +111,12 @@ export default function InvestmentInsightReportPage() {
                       {investment.name}
                     </p>
                     <p className="mt-0.5 text-xs" style={{ color: 'var(--muted)' }}>
-                      {investment.tickerOrSymbol || 'No ticker'}
+                      {modeLabel}
+                      {investment.selectedInstrument ? ` • ${instrumentDisplayName}` : ''}
+                      {investment.selectedInstrument?.symbol ? ` • ${investment.selectedInstrument.symbol}` : ''}
+                      {investment.selectedInstrument?.exchange ? ` • ${investment.selectedInstrument.exchange}` : ''}
+                      {investment.selectedInstrument?.currency ? ` • ${investment.selectedInstrument.currency}` : ''}
+                      {!investment.selectedInstrument && investment.tickerOrSymbol.trim() ? ` • Legacy ticker ${investment.tickerOrSymbol.trim().toUpperCase()}` : ''}
                       {investment.provider ? ` • ${investment.provider}` : ''}
                       {resolved.source === 'market' && resolved.marketQuote ? ` • ${marketQuotePriceSummary(resolved.marketQuote)} • ${resolved.marketQuote.source} • ${resolved.marketQuote.asOf}` : ''}
                       {resolved.source === 'manual' ? ' • Manual valuation' : ''}

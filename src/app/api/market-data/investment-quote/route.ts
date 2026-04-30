@@ -10,6 +10,9 @@ type QuotePayload = {
   priceGbp: number;
   asOf: string;
   source: string;
+  displayName: string | null;
+  exchange: string | null;
+  sourceId: string | null;
   exchangeRateToGbp: number;
   exchangeRateDate: string;
 };
@@ -69,6 +72,9 @@ function normalizeQuotePayload(
   currency: string,
   asOf: string,
   source: string,
+  displayName: string | null,
+  exchange: string | null,
+  sourceId: string | null,
   exchangeRateToGbp: number,
   exchangeRateDate: string,
 ): QuotePayload {
@@ -79,19 +85,32 @@ function normalizeQuotePayload(
     priceGbp: price * exchangeRateToGbp,
     asOf,
     source,
+    displayName,
+    exchange,
+    sourceId,
     exchangeRateToGbp,
     exchangeRateDate,
   };
 }
 
-async function fetchYahooQuote(symbol: string): Promise<
+type QuoteRequestMeta = {
+  symbol: string;
+  displayName: string | null;
+  exchange: string | null;
+  currencyHint: string | null;
+  source: string | null;
+  sourceId: string | null;
+};
+
+async function fetchYahooQuote(meta: QuoteRequestMeta): Promise<
   | { ok: true; payload: Omit<QuotePayload, 'priceGbp' | 'exchangeRateToGbp' | 'exchangeRateDate'> }
   | { ok: false; code: QuoteErrorPayload['code']; message: string; provider: string }
 > {
   const provider = 'Yahoo Finance';
+  const requestSymbol = meta.sourceId?.trim().toUpperCase() || meta.symbol;
 
   try {
-    const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(symbol)}`;
+    const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(requestSymbol)}`;
     const response = await fetch(url, { cache: 'no-store' });
 
     if (!response.ok) {
@@ -102,6 +121,10 @@ async function fetchYahooQuote(symbol: string): Promise<
       quoteResponse?: {
         result?: Array<{
           symbol?: string;
+          shortName?: string;
+          longName?: string;
+          fullExchangeName?: string;
+          exchange?: string;
           currency?: string;
           regularMarketPrice?: number;
           regularMarketTime?: number;
@@ -111,14 +134,16 @@ async function fetchYahooQuote(symbol: string): Promise<
 
     const result = data.quoteResponse?.result?.[0];
     const price = result?.regularMarketPrice;
-    const currency = result?.currency?.toUpperCase() ?? null;
-    const resolvedSymbol = result?.symbol?.toUpperCase() ?? symbol;
+    const currency = result?.currency?.toUpperCase() ?? meta.currencyHint ?? null;
+    const resolvedSymbol = result?.symbol?.toUpperCase() ?? requestSymbol;
+    const displayName = result?.longName?.trim() || result?.shortName?.trim() || meta.displayName;
+    const exchange = result?.fullExchangeName?.trim() || result?.exchange?.trim() || meta.exchange;
     const marketTime = result?.regularMarketTime
       ? new Date(result.regularMarketTime * 1000).toISOString().slice(0, 10)
       : null;
 
     if (!Number.isFinite(price) || !currency || !marketTime) {
-      return { ok: false, code: 'ticker_not_found', message: `Ticker ${symbol} was not found on Yahoo Finance.`, provider };
+      return { ok: false, code: 'ticker_not_found', message: `Ticker ${requestSymbol} was not found on Yahoo Finance.`, provider };
     }
 
     const safePrice = Number(price);
@@ -131,6 +156,9 @@ async function fetchYahooQuote(symbol: string): Promise<
         currency,
         asOf: marketTime,
         source: provider,
+        displayName,
+        exchange,
+        sourceId: meta.sourceId ?? requestSymbol,
       },
     };
   } catch {
@@ -138,11 +166,12 @@ async function fetchYahooQuote(symbol: string): Promise<
   }
 }
 
-async function fetchAlphaVantageQuote(symbol: string, apiKey: string): Promise<
+async function fetchAlphaVantageQuote(meta: QuoteRequestMeta, apiKey: string): Promise<
   | { ok: true; payload: Omit<QuotePayload, 'priceGbp' | 'exchangeRateToGbp' | 'exchangeRateDate'> }
   | { ok: false; code: QuoteErrorPayload['code']; message: string; provider: string }
 > {
   const provider = 'Alpha Vantage';
+  const symbol = meta.symbol;
 
   try {
     const quoteUrl = `https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=${encodeURIComponent(symbol)}&apikey=${encodeURIComponent(apiKey)}`;
@@ -186,6 +215,9 @@ async function fetchAlphaVantageQuote(symbol: string, apiKey: string): Promise<
         currency,
         asOf: latestTradingDay,
         source: provider,
+        displayName: meta.displayName,
+        exchange: meta.exchange,
+        sourceId: meta.sourceId,
       },
     };
   } catch {
@@ -195,6 +227,11 @@ async function fetchAlphaVantageQuote(symbol: string, apiKey: string): Promise<
 
 export async function GET(request: NextRequest) {
   const rawSymbol = request.nextUrl.searchParams.get('symbol')?.trim().toUpperCase() ?? '';
+  const displayName = request.nextUrl.searchParams.get('displayName')?.trim() || null;
+  const exchange = request.nextUrl.searchParams.get('exchange')?.trim() || null;
+  const currencyHint = request.nextUrl.searchParams.get('currencyHint')?.trim().toUpperCase() || null;
+  const source = request.nextUrl.searchParams.get('source')?.trim() || null;
+  const sourceId = request.nextUrl.searchParams.get('sourceId')?.trim() || null;
   const apiKey = process.env.ALPHA_VANTAGE_API_KEY?.trim();
 
   if (!rawSymbol) {
@@ -207,17 +244,25 @@ export async function GET(request: NextRequest) {
   }
 
   try {
+    const meta: QuoteRequestMeta = {
+      symbol: rawSymbol,
+      displayName,
+      exchange,
+      currencyHint,
+      source,
+      sourceId,
+    };
     const providerResults: Array<
       | { ok: true; payload: Omit<QuotePayload, 'priceGbp' | 'exchangeRateToGbp' | 'exchangeRateDate'> }
       | { ok: false; code: QuoteErrorPayload['code']; message: string; provider: string }
     > = [];
 
-    const yahooResult = await fetchYahooQuote(rawSymbol);
+    const yahooResult = await fetchYahooQuote(meta);
     providerResults.push(yahooResult);
     let winningPayload = yahooResult.ok ? yahooResult.payload : null;
 
     if (!winningPayload && apiKey) {
-      const alphaResult = await fetchAlphaVantageQuote(rawSymbol, apiKey);
+      const alphaResult = await fetchAlphaVantageQuote(meta, apiKey);
       providerResults.push(alphaResult);
       winningPayload = alphaResult.ok ? alphaResult.payload : null;
     }
@@ -251,6 +296,9 @@ export async function GET(request: NextRequest) {
           winningPayload.currency,
           winningPayload.asOf,
           winningPayload.source,
+          winningPayload.displayName,
+          winningPayload.exchange,
+          winningPayload.sourceId,
           usdToGbp.rate,
           usdToGbp.date,
         );
@@ -285,6 +333,9 @@ export async function GET(request: NextRequest) {
       winningPayload.currency,
       winningPayload.asOf,
       winningPayload.source,
+      winningPayload.displayName,
+      winningPayload.exchange,
+      winningPayload.sourceId,
       1,
       winningPayload.asOf,
     );

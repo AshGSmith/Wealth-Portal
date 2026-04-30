@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import Sheet from '@/components/ui/Sheet';
 import type {
+  InvestmentHolding,
   InvestmentHoldingId,
   InvestmentPerShareCurrency,
   InvestmentPurchase,
@@ -13,6 +14,7 @@ import type {
 interface Props {
   investmentId: InvestmentHoldingId | null;
   investmentName: string;
+  investment: InvestmentHolding | null;
   open: boolean;
   onClose: () => void;
   onSave: (purchase: InvestmentPurchase) => void;
@@ -38,6 +40,10 @@ function blank(): FormState {
   };
 }
 
+function preferredCurrencyForInvestment(investment: InvestmentHolding | null): InvestmentPerShareCurrency {
+  return investment?.selectedInstrument?.currency === 'USD' ? 'USD' : 'GBP';
+}
+
 const inputCls = 'w-full rounded-lg border px-3 py-2.5 text-sm outline-none transition-colors';
 const inputStyle = {
   background: 'var(--surface-hover)',
@@ -49,17 +55,22 @@ const inputStyle = {
 export default function InvestmentPurchaseForm({
   investmentId,
   investmentName,
+  investment,
   open,
   onClose,
   onSave,
 }: Props) {
-  const [form, setForm] = useState<FormState>(blank);
+  const [form, setForm] = useState<FormState>(() => ({
+    ...blank(),
+    perShareCurrency: preferredCurrencyForInvestment(investment),
+  }));
   const [errors, setErrors] = useState<Partial<Record<keyof FormState, string>>>({});
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   if (!investmentId) return null;
   const currentInvestmentId = investmentId;
+  const usesLiveInstrument = Boolean(investment?.selectedInstrument);
 
   function set<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm(prev => ({ ...prev, [key]: value }));
@@ -70,13 +81,20 @@ export default function InvestmentPurchaseForm({
   function validate(): boolean {
     const nextErrors: Partial<Record<keyof FormState, string>> = {};
     if (!form.purchaseDate) nextErrors.purchaseDate = 'Required';
-    if (!form.amountInvested.trim()) nextErrors.amountInvested = 'Required';
-    else if (Number(form.amountInvested) <= 0) nextErrors.amountInvested = 'Must be > 0';
-    if (form.sharesPurchased.trim() && Number(form.sharesPurchased) <= 0) {
-      nextErrors.sharesPurchased = 'Must be > 0';
-    }
-    if (form.perSharePrice.trim() && Number(form.perSharePrice) <= 0) {
-      nextErrors.perSharePrice = 'Must be > 0';
+    if (usesLiveInstrument) {
+      if (!form.sharesPurchased.trim()) nextErrors.sharesPurchased = 'Required';
+      else if (Number(form.sharesPurchased) <= 0) nextErrors.sharesPurchased = 'Must be > 0';
+      if (!form.perSharePrice.trim()) nextErrors.perSharePrice = 'Required';
+      else if (Number(form.perSharePrice) <= 0) nextErrors.perSharePrice = 'Must be > 0';
+    } else {
+      if (!form.amountInvested.trim()) nextErrors.amountInvested = 'Required';
+      else if (Number(form.amountInvested) <= 0) nextErrors.amountInvested = 'Must be > 0';
+      if (form.sharesPurchased.trim() && Number(form.sharesPurchased) <= 0) {
+        nextErrors.sharesPurchased = 'Must be > 0';
+      }
+      if (form.perSharePrice.trim() && Number(form.perSharePrice) <= 0) {
+        nextErrors.perSharePrice = 'Must be > 0';
+      }
     }
     setErrors(nextErrors);
     return Object.keys(nextErrors).length === 0;
@@ -87,6 +105,7 @@ export default function InvestmentPurchaseForm({
     setSubmitting(true);
     setSubmitError(null);
 
+    const sharesPurchased = form.sharesPurchased.trim() ? parseFloat(form.sharesPurchased) : null;
     let perSharePrice: number | null = null;
     let perShareCurrency: InvestmentPerShareCurrency | null = null;
     let perSharePriceGbp: number | null = null;
@@ -119,12 +138,21 @@ export default function InvestmentPurchaseForm({
       }
     }
 
+    const calculatedAmountInvested = (
+      usesLiveInstrument
+      && sharesPurchased !== null
+      && perSharePrice !== null
+      && perSharePriceGbp !== null
+    )
+      ? sharesPurchased * perSharePriceGbp
+      : null;
+
     onSave({
       id: `inv-purchase-${Date.now()}` as unknown as InvestmentPurchaseId,
       investmentId: currentInvestmentId,
       purchaseDate: form.purchaseDate as ISODate,
-      amountInvested: parseFloat(form.amountInvested),
-      sharesPurchased: form.sharesPurchased.trim() ? parseFloat(form.sharesPurchased) : null,
+      amountInvested: calculatedAmountInvested ?? parseFloat(form.amountInvested),
+      sharesPurchased,
       perSharePrice,
       perShareCurrency,
       perSharePriceGbp,
@@ -168,6 +196,22 @@ export default function InvestmentPurchaseForm({
     </div>
   );
 
+  const calculatedAmountPreview = (
+    usesLiveInstrument
+    && form.sharesPurchased.trim()
+    && form.perSharePrice.trim()
+  )
+    ? (() => {
+        const shares = Number(form.sharesPurchased);
+        const price = Number(form.perSharePrice);
+        if (!Number.isFinite(shares) || !Number.isFinite(price) || shares <= 0 || price <= 0) return null;
+        const rawAmount = shares * price;
+        return form.perShareCurrency === 'GBP'
+          ? new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(rawAmount)
+          : `${new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(rawAmount)} converted to GBP on save`;
+      })()
+    : null;
+
   return (
     <Sheet open={open} onClose={onClose} title={title} footer={footer}>
       <div className="space-y-4 px-5 py-5">
@@ -189,25 +233,38 @@ export default function InvestmentPurchaseForm({
           <label className="mb-1.5 block text-xs font-medium" style={{ color: 'var(--muted)' }}>
             Amount Invested <span className="text-rose-500">*</span>
           </label>
-          <div className="relative">
-            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm" style={{ color: 'var(--muted)' }}>£</span>
-            <input
-              type="number"
-              min="0"
-              step="0.01"
-              value={form.amountInvested}
-              onChange={event => set('amountInvested', event.target.value)}
-              placeholder="0.00"
-              className={inputCls + ' pl-7'}
-              style={{ ...inputStyle, borderColor: errors.amountInvested ? '#f43f5e' : 'var(--border)' }}
-            />
-          </div>
-          {errors.amountInvested && <p className="mt-1 text-xs text-rose-500">{errors.amountInvested}</p>}
+          {usesLiveInstrument ? (
+            <div className="rounded-lg border px-3 py-2.5 text-sm" style={{ borderColor: 'var(--border)', background: 'var(--surface-hover)', color: 'var(--muted)' }}>
+              Calculated automatically from shares purchased and per-share price.
+              {calculatedAmountPreview ? (
+                <p className="mt-1 font-medium" style={{ color: 'var(--foreground)' }}>
+                  Preview: {calculatedAmountPreview}
+                </p>
+              ) : null}
+            </div>
+          ) : (
+            <>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm" style={{ color: 'var(--muted)' }}>£</span>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={form.amountInvested}
+                  onChange={event => set('amountInvested', event.target.value)}
+                  placeholder="0.00"
+                  className={inputCls + ' pl-7'}
+                  style={{ ...inputStyle, borderColor: errors.amountInvested ? '#f43f5e' : 'var(--border)' }}
+                />
+              </div>
+              {errors.amountInvested && <p className="mt-1 text-xs text-rose-500">{errors.amountInvested}</p>}
+            </>
+          )}
         </div>
 
         <div>
           <label className="mb-1.5 block text-xs font-medium" style={{ color: 'var(--muted)' }}>
-            Shares Purchased <span style={{ color: 'var(--muted)' }}>(optional)</span>
+            Shares Purchased {usesLiveInstrument ? <span className="text-rose-500">*</span> : <span style={{ color: 'var(--muted)' }}>(optional)</span>}
           </label>
           <input
             type="number"
@@ -225,7 +282,7 @@ export default function InvestmentPurchaseForm({
         <div className="grid grid-cols-[1fr_auto] gap-2">
           <div>
             <label className="mb-1.5 block text-xs font-medium" style={{ color: 'var(--muted)' }}>
-              Per-Share Price <span style={{ color: 'var(--muted)' }}>(optional)</span>
+              Per-Share Price {usesLiveInstrument ? <span className="text-rose-500">*</span> : <span style={{ color: 'var(--muted)' }}>(optional)</span>}
             </label>
             <input
               type="number"

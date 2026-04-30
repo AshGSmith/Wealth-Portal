@@ -22,6 +22,7 @@ import {
   purchaseExchangeRateNote,
   purchasePerShareSummary,
   resolveInvestmentCurrentValue,
+  totalSharesHeldForInvestment,
   useInvestmentMarketQuotes,
 } from '@/lib/investmentCalc';
 import { useStore } from '@/lib/store';
@@ -223,6 +224,17 @@ function InvestmentRow({
   const gainLoss = currentValue - totalInvested;
   const hasValueSource = resolved.source !== 'cost' || totalInvested > 0;
   const gainLossPct = totalInvested > 0 ? (gainLoss / totalInvested) * 100 : null;
+  const symbolKey = investment.tickerOrSymbol.trim().toUpperCase();
+  const sharesHeld = totalSharesHeldForInvestment(investment.id, purchases);
+  const liveQuoteRequested = symbolKey.length > 0 && sharesHeld !== null;
+  const liveQuoteFailed = liveQuoteRequested && Object.prototype.hasOwnProperty.call(marketQuotes, symbolKey) && marketQuotes[symbolKey] === null;
+  const currentValueSubtitle = resolved.source === 'market'
+    ? `Live quote ${resolved.marketQuote?.asOf ?? ''}`.trim()
+    : liveQuoteFailed
+      ? `Live quote unavailable for ${symbolKey}`
+      : resolved.source === 'manual'
+        ? latestValuation?.valuationDate ?? 'Manual valuation'
+        : 'Cost basis fallback';
 
   return (
     <div id={investment.id} className="rounded-xl border p-4" style={{ background: 'var(--surface)', borderColor: 'var(--border)' }}>
@@ -323,13 +335,7 @@ function InvestmentRow({
         <Tile
           title="Current value"
           value={hasValueSource ? fmtCurrency(currentValue) : '—'}
-          subtitle={
-            resolved.source === 'market'
-              ? `Live quote ${resolved.marketQuote?.asOf ?? ''}`.trim()
-              : resolved.source === 'manual'
-                ? latestValuation?.valuationDate ?? 'Manual valuation'
-                : 'Cost basis fallback'
-          }
+          subtitle={currentValueSubtitle}
           size="sm"
           surface="subtle"
           titleClassName="text-[10px] font-medium uppercase tracking-wide"
@@ -356,6 +362,14 @@ function InvestmentRow({
 
       {expanded && (
         <div className="mt-3 space-y-3">
+          {liveQuoteFailed && (
+            <div
+              className="rounded-xl border px-3 py-2 text-xs"
+              style={{ background: '#78350f14', borderColor: '#f59e0b55', color: 'var(--muted)' }}
+            >
+              Live market quote unavailable for <span style={{ color: 'var(--foreground)' }}>{symbolKey}</span>. Using {resolved.source === 'manual' ? 'your latest manual valuation' : 'cost basis fallback'} instead.
+            </div>
+          )}
           {!isArchived && (
             <div className="flex flex-wrap gap-2">
               <button

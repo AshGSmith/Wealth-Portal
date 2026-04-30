@@ -10,6 +10,7 @@ import {
   purchasePerShareSummary,
   resolveInvestmentCurrentValue,
   totalInvestedForInvestment,
+  totalSharesHeldForInvestment,
   useInvestmentMarketQuotes,
 } from '@/lib/investmentCalc';
 import { useStore } from '@/lib/store';
@@ -85,6 +86,12 @@ export default function InvestmentInsightReportPage() {
             const currentValue = resolved.currentValue;
             const gainLoss = currentValue - totalInvestedForHolding;
             const gainLossPct = totalInvestedForHolding > 0 ? (gainLoss / totalInvestedForHolding) * 100 : null;
+            const symbolKey = investment.tickerOrSymbol.trim().toUpperCase();
+            const sharesHeld = totalSharesHeldForInvestment(investment.id, purchases);
+            const liveQuoteFailed = symbolKey.length > 0
+              && sharesHeld !== null
+              && Object.prototype.hasOwnProperty.call(marketQuotes, symbolKey)
+              && marketQuotes[symbolKey] === null;
 
             return (
               <div
@@ -102,6 +109,7 @@ export default function InvestmentInsightReportPage() {
                       {investment.provider ? ` • ${investment.provider}` : ''}
                       {resolved.source === 'market' && resolved.marketQuote ? ` • Live ${resolved.marketQuote.currency} quote ${resolved.marketQuote.asOf}` : ''}
                       {resolved.source === 'manual' ? ' • Manual valuation' : ''}
+                      {liveQuoteFailed ? ' • Live quote unavailable' : ''}
                     </p>
                   </div>
                   <p className="shrink-0 text-sm font-semibold tabular-nums" style={{ color: '#0ea5e9' }}>

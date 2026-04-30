@@ -9,10 +9,30 @@ async function fetchUsdToGbpRate() {
   });
 
   if (!response.ok) throw new Error('Failed to load USD to GBP exchange rate.');
-  const data = await response.json() as Array<{ base: string; quote: string; rate: number; date: string }>;
-  const row = data.find(entry => entry.base === 'USD' && entry.quote === 'GBP') ?? data[0];
-  if (!row?.rate || !row?.date) throw new Error('USD to GBP exchange rate unavailable.');
-  return { rate: row.rate, date: row.date };
+  const data = await response.json() as {
+    date?: string;
+    rates?: Record<string, number>;
+  };
+  const rate = data.rates?.GBP ?? null;
+  if (!rate || !data.date) throw new Error('USD to GBP exchange rate unavailable.');
+  return { rate, date: data.date };
+}
+
+function inferCurrencyFromSymbol(symbol: string): 'USD' | 'GBP' | null {
+  if (symbol.endsWith('.L')) return 'GBP';
+  if (symbol.endsWith('.LON')) return 'GBP';
+  if (/^[A-Z-]+$/.test(symbol)) return 'USD';
+  return null;
+}
+
+async function fetchOverviewCurrency(symbol: string, apiKey: string): Promise<string | null> {
+  const overviewUrl = `https://www.alphavantage.co/query?function=OVERVIEW&symbol=${encodeURIComponent(symbol)}&apikey=${encodeURIComponent(apiKey)}`;
+  const response = await fetch(overviewUrl, { cache: 'no-store' });
+  if (!response.ok) return null;
+
+  const data = await response.json() as Record<string, string>;
+  const currency = (data.Currency ?? '').toUpperCase();
+  return currency || null;
 }
 
 export async function GET(request: NextRequest) {
@@ -34,26 +54,29 @@ export async function GET(request: NextRequest) {
 
   try {
     const quoteUrl = `https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=${encodeURIComponent(rawSymbol)}&apikey=${encodeURIComponent(apiKey)}`;
-    const overviewUrl = `https://www.alphavantage.co/query?function=OVERVIEW&symbol=${encodeURIComponent(rawSymbol)}&apikey=${encodeURIComponent(apiKey)}`;
+    const quoteResponse = await fetch(quoteUrl, { cache: 'no-store' });
 
-    const [quoteResponse, overviewResponse] = await Promise.all([
-      fetch(quoteUrl, { cache: 'no-store' }),
-      fetch(overviewUrl, { cache: 'no-store' }),
-    ]);
-
-    if (!quoteResponse.ok || !overviewResponse.ok) {
+    if (!quoteResponse.ok) {
       return NextResponse.json({ message: 'Failed to load market data.' }, { status: 502 });
     }
 
     const quoteJson = await quoteResponse.json() as Record<string, Record<string, string>>;
-    const overviewJson = await overviewResponse.json() as Record<string, string>;
     const quoteData = quoteJson['Global Quote'];
     const price = quoteData ? Number(quoteData['05. price']) : NaN;
     const latestTradingDay = quoteData?.['07. latest trading day'] ?? null;
-    const currency = (overviewJson.Currency ?? '').toUpperCase();
+    let currency = inferCurrencyFromSymbol(rawSymbol);
 
-    if (!Number.isFinite(price) || !latestTradingDay || !currency) {
+    if (!currency) {
+      const overviewCurrency = await fetchOverviewCurrency(rawSymbol, apiKey);
+      currency = overviewCurrency === 'USD' || overviewCurrency === 'GBP' ? overviewCurrency : null;
+    }
+
+    if (!Number.isFinite(price) || !latestTradingDay) {
       return NextResponse.json({ message: 'Ticker not found or market data unavailable.' }, { status: 404 });
+    }
+
+    if (!currency) {
+      return NextResponse.json({ message: `Could not determine quote currency for ${rawSymbol}.` }, { status: 422 });
     }
 
     let priceGbp = price;

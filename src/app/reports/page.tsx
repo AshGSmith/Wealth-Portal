@@ -51,6 +51,14 @@ const REPORTS = [
     color: '#2563eb',
     background: '#2563eb22',
   },
+  {
+    href: '/reports/investment-insight',
+    title: 'Investment Insight',
+    description: 'Review holdings, purchase history, valuations, and performance.',
+    icon: TrendingUp,
+    color: '#0ea5e9',
+    background: '#0ea5e922',
+  },
 ] as const;
 
 export default function ReportsPage() {

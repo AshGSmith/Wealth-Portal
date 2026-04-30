@@ -10,6 +10,9 @@ import type {
   Expense,
   IncomeEntry,
   IncomeSource,
+  InvestmentHolding,
+  InvestmentPurchase,
+  InvestmentValuationHistory,
   Mortgage,
   MortgagePayment,
   Pension,
@@ -49,6 +52,9 @@ export interface PersistedAppData {
   debtHistory: DebtHistory[];
   pensions: Pension[];
   pensionHistory: PensionHistory[];
+  investments: InvestmentHolding[];
+  investmentPurchases: InvestmentPurchase[];
+  investmentValuationHistory: InvestmentValuationHistory[];
 }
 
 function nowIso(): string {
@@ -95,6 +101,9 @@ export function emptyPersistedAppData(): PersistedAppData {
     debtHistory: [],
     pensions: [],
     pensionHistory: [],
+    investments: [],
+    investmentPurchases: [],
+    investmentValuationHistory: [],
   };
 }
 
@@ -124,6 +133,9 @@ export function normalizePersistedAppData(value: unknown): PersistedAppData {
     debtHistory: readArray<DebtHistory>(raw.debtHistory),
     pensions: readArray<Pension>(raw.pensions),
     pensionHistory: readArray<PensionHistory>(raw.pensionHistory),
+    investments: readArray<InvestmentHolding>(raw.investments),
+    investmentPurchases: readArray<InvestmentPurchase>(raw.investmentPurchases),
+    investmentValuationHistory: readArray<InvestmentValuationHistory>(raw.investmentValuationHistory),
   };
 }
 
@@ -213,7 +225,8 @@ function mergeLinkedRecords<T extends { id: string }, P extends string>(
     && !currentParentIds.has((record as Record<string, unknown>).mortgageId as P)
     && !currentParentIds.has((record as Record<string, unknown>).savingsAccountId as P)
     && !currentParentIds.has((record as Record<string, unknown>).debtId as P)
-    && !currentParentIds.has((record as Record<string, unknown>).pensionId as P));
+    && !currentParentIds.has((record as Record<string, unknown>).pensionId as P)
+    && !currentParentIds.has((record as Record<string, unknown>).investmentId as P));
 
   return uniqueById([...preserved, ...nextVisible]);
 }
@@ -285,6 +298,8 @@ export function filterPersistedAppDataForUser(
   const debtIds = new Set(debts.map(debt => debt.id as string));
   const pensions = filterOwnedRecords(data.pensions, accessibleUserIds);
   const pensionIds = new Set(pensions.map(pension => pension.id as string));
+  const investments = filterOwnedRecords(data.investments, accessibleUserIds);
+  const investmentIds = new Set(investments.map(investment => investment.id as string));
 
   return {
     budgets: data.budgets
@@ -310,6 +325,9 @@ export function filterPersistedAppDataForUser(
     debtHistory: data.debtHistory.filter(entry => debtIds.has(entry.debtId as string)),
     pensions,
     pensionHistory: data.pensionHistory.filter(entry => pensionIds.has(entry.pensionId as string)),
+    investments,
+    investmentPurchases: data.investmentPurchases.filter(entry => investmentIds.has(entry.investmentId as string)),
+    investmentValuationHistory: data.investmentValuationHistory.filter(entry => investmentIds.has(entry.investmentId as string)),
   };
 }
 
@@ -325,6 +343,7 @@ export function savePersistedAppDataForUser(
   const visibleSavingsAccountIds = new Set(nextVisibleData.savingsAccounts.map(account => account.id as string));
   const visibleDebtIds = new Set(nextVisibleData.debts.map(debt => debt.id as string));
   const visiblePensionIds = new Set(nextVisibleData.pensions.map(pension => pension.id as string));
+  const visibleInvestmentIds = new Set(nextVisibleData.investments.map(investment => investment.id as string));
 
   const merged: PersistedAppData = {
     budgets: mergeBudgets(current.budgets, nextVisibleData.budgets, accessibleUserIds),
@@ -345,6 +364,9 @@ export function savePersistedAppDataForUser(
     debtHistory: mergeLinkedRecords(current.debtHistory, nextVisibleData.debtHistory, visibleDebtIds),
     pensions: mergeOwnedRecords(current.pensions, nextVisibleData.pensions, accessibleUserIds),
     pensionHistory: mergeLinkedRecords(current.pensionHistory, nextVisibleData.pensionHistory, visiblePensionIds),
+    investments: mergeOwnedRecords(current.investments, nextVisibleData.investments, accessibleUserIds),
+    investmentPurchases: mergeLinkedRecords(current.investmentPurchases, nextVisibleData.investmentPurchases, visibleInvestmentIds),
+    investmentValuationHistory: mergeLinkedRecords(current.investmentValuationHistory, nextVisibleData.investmentValuationHistory, visibleInvestmentIds),
   };
 
   writePersistedAppData(merged);

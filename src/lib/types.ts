@@ -25,6 +25,9 @@ export type DebtHistoryId      = Brand<string, 'DebtHistoryId'>;
 export type DebtTransactionId  = Brand<string, 'DebtTransactionId'>;
 export type PensionId          = Brand<string, 'PensionId'>;
 export type PensionHistoryId   = Brand<string, 'PensionHistoryId'>;
+export type InvestmentHoldingId = Brand<string, 'InvestmentHoldingId'>;
+export type InvestmentPurchaseId = Brand<string, 'InvestmentPurchaseId'>;
+export type InvestmentValuationHistoryId = Brand<string, 'InvestmentValuationHistoryId'>;
 
 // ─── Shared primitives ───────────────────────────────────────────────────────
 
@@ -306,6 +309,42 @@ export interface PensionHistory {
   date:      ISODate;
 }
 
+/**
+ * An investment holding such as a stock, fund, or ETF.
+ * Parent of: InvestmentPurchase, InvestmentValuationHistory
+ */
+export interface InvestmentHolding extends OwnedRecord {
+  id:             InvestmentHoldingId;
+  name:           string;
+  tickerOrSymbol: string;
+  provider:       string | null;
+  archived:       boolean;
+}
+
+/**
+ * A purchase made into an InvestmentHolding.
+ */
+export interface InvestmentPurchase {
+  id:              InvestmentPurchaseId;
+  investmentId:    InvestmentHoldingId;  // → InvestmentHolding
+  purchaseDate:    ISODate;
+  amountInvested:  number;
+  sharesPurchased: number | null;
+  note?:           string | null;
+}
+
+/**
+ * A dated valuation snapshot for an InvestmentHolding.
+ * The latest valuation is the current value for reporting and wealth totals.
+ */
+export interface InvestmentValuationHistory {
+  id:            InvestmentValuationHistoryId;
+  investmentId:  InvestmentHoldingId;  // → InvestmentHolding
+  valuationDate: ISODate;
+  currentValue:  number;
+  note?:         string | null;
+}
+
 // ─── Wealth relationships (summary) ──────────────────────────────────────────
 //
 //  Mortgage        ──< MortgagePayment   (one mortgage, many payments)
@@ -313,6 +352,8 @@ export interface PensionHistory {
 //  SavingsAccount  ──< SavingsHistory    (one account, many balance snapshots)
 //  Debt            ──< DebtHistory       (one debt, many balance snapshots)
 //  Pension         ──< PensionHistory    (one pension, many balance snapshots)
+//  InvestmentHolding ──< InvestmentPurchase         (one holding, many purchases)
+//  InvestmentHolding ──< InvestmentValuationHistory (one holding, many valuations)
 //
 //  History tables are append-only snapshots; currentBalance on the parent
 //  entity is the authoritative live value — history is for trend charting.

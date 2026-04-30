@@ -21,6 +21,12 @@ function fmtPercent(value: number): string {
   return `${(value * 100).toFixed(2)}%`;
 }
 
+function totalInvestedFor(investmentId: string, purchases: { investmentId: string; amountInvested: number }[]): number {
+  return purchases
+    .filter(entry => entry.investmentId === investmentId)
+    .reduce((sum, entry) => sum + entry.amountInvested, 0);
+}
+
 type BreakdownRowProps = {
   label: string;
   meta?: string;
@@ -96,6 +102,7 @@ export default function NetWorthReportPage() {
   const properties = store.properties.filter(property => isPropertyCurrentAsOf(property, todayIso));
   const savingsAccounts = store.savingsAccounts.filter(account => !account.archived);
   const pensions = store.pensions.filter(pension => !pension.archived);
+  const investments = store.investments.filter(investment => !investment.archived);
   const mortgages = store.mortgages.filter(mortgage => isMortgageCurrentAsOf(mortgage, todayIso));
   const debts = store.debts.filter(debt => !debt.archived);
 
@@ -160,6 +167,37 @@ export default function NetWorthReportPage() {
             valueColor="#2563eb"
           />
         ))}
+      </SectionCard>
+
+      <SectionCard
+        title="Investments"
+        total={fmtCurrency(totals.investmentAssets)}
+        totalColor="#0ea5e9"
+        emptyLabel="No active investments."
+      >
+        {investments.map(investment => {
+          const valuations = store.investmentValuationHistory
+            .filter(entry => entry.investmentId === investment.id)
+            .sort((a, b) => a.valuationDate.localeCompare(b.valuationDate));
+          const latestValuation = valuations.at(-1) ?? null;
+          const totalInvested = totalInvestedFor(investment.id, store.investmentPurchases);
+          const currentValue = latestValuation?.currentValue ?? totalInvested;
+          const metaParts = [
+            investment.tickerOrSymbol,
+            investment.provider ?? undefined,
+            latestValuation ? `Valued ${latestValuation.valuationDate}` : totalInvested > 0 ? 'Using total invested' : 'No valuation yet',
+          ].filter(Boolean);
+
+          return (
+            <BreakdownRow
+              key={investment.id}
+              label={investment.name}
+              meta={metaParts.join(' • ')}
+              value={fmtCurrency(currentValue)}
+              valueColor="#0ea5e9"
+            />
+          );
+        })}
       </SectionCard>
 
       <SectionCard

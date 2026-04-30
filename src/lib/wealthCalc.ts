@@ -1,7 +1,7 @@
 import { useStore } from './store';
 import type {
   Property, Mortgage, MortgagePayment,
-  SavingsAccount, Debt, Pension,
+  SavingsAccount, Debt, Pension, InvestmentHolding, InvestmentPurchase, InvestmentValuationHistory,
 } from './types';
 
 // ─── Output types ─────────────────────────────────────────────────────────────
@@ -11,6 +11,7 @@ export interface WealthCalc {
   propertyAssets:  number;
   savingsAssets:   number;
   pensionAssets:   number;
+  investmentAssets: number;
   totalAssets:     number;
 
   // Liability components
@@ -153,6 +154,27 @@ export function totalPensionBalance(pensions: Pension[]): number {
     .reduce((s, p) => s + p.currentBalance, 0);
 }
 
+/** Sum latest valuation across all non-archived investment holdings. */
+export function totalInvestmentValue(
+  investments: InvestmentHolding[],
+  purchases: InvestmentPurchase[],
+  valuationHistory: InvestmentValuationHistory[],
+): number {
+  return investments
+    .filter(investment => !investment.archived)
+    .reduce((sum, investment) => {
+      const latestValuation = valuationHistory
+        .filter(entry => entry.investmentId === investment.id)
+        .sort((a, b) => a.valuationDate.localeCompare(b.valuationDate))
+        .at(-1);
+      const totalInvested = purchases
+        .filter(entry => entry.investmentId === investment.id)
+        .reduce((purchaseSum, entry) => purchaseSum + entry.amountInvested, 0);
+
+      return sum + (latestValuation?.currentValue ?? totalInvested);
+    }, 0);
+}
+
 // ─── React hook ──────────────────────────────────────────────────────────────
 
 /** Reactive wealth snapshot — re-calculates whenever any store value changes. */
@@ -165,6 +187,9 @@ export function useWealthCalc(): WealthCalc {
     store.savingsAccounts,
     store.debts,
     store.pensions,
+    store.investments,
+    store.investmentPurchases,
+    store.investmentValuationHistory,
   );
 }
 
@@ -183,21 +208,26 @@ export function calcWealth(
   savingsAccounts:  SavingsAccount[],
   debts:            Debt[],
   pensions:         Pension[],
+  investments:      InvestmentHolding[],
+  investmentPurchases: InvestmentPurchase[],
+  investmentValuationHistory: InvestmentValuationHistory[],
   asOfIso = currentIsoDate(),
 ): WealthCalc {
   const propertyAssets      = totalPropertyValue(properties, asOfIso);
   const savingsAssets        = totalSavingsBalance(savingsAccounts);
   const pensionAssets        = totalPensionBalance(pensions);
+  const investmentAssets     = totalInvestmentValue(investments, investmentPurchases, investmentValuationHistory);
   const mortgageLiabilities  = totalMortgageLiabilities(mortgages, mortgagePayments, asOfIso);
   const debtLiabilities      = totalDebtBalance(debts);
 
-  const totalAssets      = propertyAssets + savingsAssets + pensionAssets;
+  const totalAssets      = propertyAssets + savingsAssets + pensionAssets + investmentAssets;
   const totalLiabilities = mortgageLiabilities + debtLiabilities;
 
   return {
     propertyAssets,
     savingsAssets,
     pensionAssets,
+    investmentAssets,
     totalAssets,
     mortgageLiabilities,
     debtLiabilities,

@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { Home, Landmark, PiggyBank, CreditCard, Briefcase, ChevronRight } from 'lucide-react';
+import { Home, Landmark, PiggyBank, CreditCard, Briefcase, ChevronRight, TrendingUp } from 'lucide-react';
 import PageHeader from '@/components/layout/PageHeader';
 import NetWorthTile from '@/components/ui/NetWorthTile';
 import Tile from '@/components/ui/Tile';
@@ -55,6 +55,15 @@ const SECTIONS = [
     bg:       '#3b82f622',
     getValue: (t: WealthCalc) => t.pensionAssets,
     caption:  'Total value',
+  },
+  {
+    href:     '/wealth/investments',
+    label:    'Investments',
+    icon:     TrendingUp,
+    colour:   '#2563eb',
+    bg:       '#2563eb22',
+    getValue: (t: WealthCalc) => t.investmentAssets,
+    caption:  'Current value',
   },
 ] as const;
 

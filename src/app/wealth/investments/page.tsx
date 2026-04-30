@@ -6,6 +6,7 @@ import {
   Pencil,
   Archive,
   ArchiveRestore,
+  Trash2,
   ChevronDown,
   ChevronRight,
   TrendingUp,
@@ -139,6 +140,7 @@ export default function InvestmentsPage() {
                   accessibleUsers={store.accessibleUsers}
                   onEdit={() => openEdit(investment)}
                   onRestore={() => store.setInvestmentArchived(investment.id, false)}
+                  onDelete={() => store.removeInvestment(investment.id)}
                   isArchived
                 />
               ))}
@@ -152,7 +154,12 @@ export default function InvestmentsPage() {
         investment={editing}
         open={showForm}
         onClose={() => setShowForm(false)}
-        onSave={investment => store.upsertInvestment(investment)}
+        onSave={({ investment, initialPurchase }) => {
+          store.upsertInvestment(investment);
+          if (initialPurchase) {
+            store.upsertInvestmentPurchase(initialPurchase);
+          }
+        }}
         ownerOptions={store.accessibleUsers}
         currentUserId={store.currentUserId}
       />
@@ -186,6 +193,7 @@ interface InvestmentRowProps {
   onAddValuation?: () => void;
   onArchive?: () => void;
   onRestore?: () => void;
+  onDelete?: () => void;
   isArchived?: boolean;
 }
 
@@ -199,6 +207,7 @@ function InvestmentRow({
   onAddValuation,
   onArchive,
   onRestore,
+  onDelete,
   isArchived,
 }: InvestmentRowProps) {
   const [expanded, setExpanded] = useState(false);
@@ -264,16 +273,32 @@ function InvestmentRow({
             <Pencil size={13} />
           </button>
           {isArchived ? (
-            <button
-              onClick={onRestore}
-              className="rounded-lg p-1.5 transition-colors"
-              style={{ color: 'var(--muted)' }}
-              title="Restore"
-              onMouseEnter={event => (event.currentTarget.style.background = 'var(--surface-hover)')}
-              onMouseLeave={event => (event.currentTarget.style.background = 'transparent')}
-            >
-              <ArchiveRestore size={13} />
-            </button>
+            <>
+              <button
+                onClick={onRestore}
+                className="rounded-lg p-1.5 transition-colors"
+                style={{ color: 'var(--muted)' }}
+                title="Restore"
+                onMouseEnter={event => (event.currentTarget.style.background = 'var(--surface-hover)')}
+                onMouseLeave={event => (event.currentTarget.style.background = 'transparent')}
+              >
+                <ArchiveRestore size={13} />
+              </button>
+              <button
+                onClick={() => {
+                  if (!onDelete) return;
+                  const confirmed = window.confirm(`Permanently delete "${investment.name}" and all related purchase and valuation history?`);
+                  if (confirmed) onDelete();
+                }}
+                className="rounded-lg p-1.5 transition-colors"
+                style={{ color: '#f43f5e' }}
+                title="Delete Permanently"
+                onMouseEnter={event => (event.currentTarget.style.background = 'var(--surface-hover)')}
+                onMouseLeave={event => (event.currentTarget.style.background = 'transparent')}
+              >
+                <Trash2 size={13} />
+              </button>
+            </>
           ) : (
             <button
               onClick={onArchive}

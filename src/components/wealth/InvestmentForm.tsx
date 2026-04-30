@@ -4,13 +4,19 @@ import { useState } from 'react';
 import Sheet from '@/components/ui/Sheet';
 import OwnerSelector from '@/components/ui/OwnerSelector';
 import type { AccessibleUser } from '@/lib/auth/types';
-import type { InvestmentHolding, InvestmentHoldingId } from '@/lib/types';
+import type {
+  InvestmentHolding,
+  InvestmentHoldingId,
+  InvestmentPurchase,
+  InvestmentPurchaseId,
+  ISODate,
+} from '@/lib/types';
 
 interface Props {
   investment: InvestmentHolding | null;
   open: boolean;
   onClose: () => void;
-  onSave: (investment: InvestmentHolding) => void;
+  onSave: (payload: { investment: InvestmentHolding; initialPurchase?: InvestmentPurchase }) => void;
   ownerOptions: AccessibleUser[];
   currentUserId: string | null;
 }
@@ -20,6 +26,10 @@ interface FormState {
   tickerOrSymbol: string;
   provider: string;
   ownerUserIds: string[];
+  purchaseDate: string;
+  amountInvested: string;
+  sharesPurchased: string;
+  note: string;
 }
 
 function blank(currentUserId: string | null): FormState {
@@ -28,6 +38,10 @@ function blank(currentUserId: string | null): FormState {
     tickerOrSymbol: '',
     provider: '',
     ownerUserIds: currentUserId ? [currentUserId] : [],
+    purchaseDate: new Date().toISOString().slice(0, 10),
+    amountInvested: '',
+    sharesPurchased: '',
+    note: '',
   };
 }
 
@@ -37,6 +51,10 @@ function fromInvestment(investment: InvestmentHolding): FormState {
     tickerOrSymbol: investment.tickerOrSymbol,
     provider: investment.provider ?? '',
     ownerUserIds: investment.ownerUserIds,
+    purchaseDate: new Date().toISOString().slice(0, 10),
+    amountInvested: '',
+    sharesPurchased: '',
+    note: '',
   };
 }
 
@@ -60,6 +78,12 @@ export default function InvestmentForm({ investment, open, onClose, onSave, owne
     if (!form.name.trim()) nextErrors.name = 'Required';
     if (!form.tickerOrSymbol.trim()) nextErrors.tickerOrSymbol = 'Required';
     if (form.ownerUserIds.length === 0) nextErrors.ownerUserIds = 'Required';
+    if (!investment) {
+      if (!form.purchaseDate) nextErrors.purchaseDate = 'Required';
+      if (!form.amountInvested.trim()) nextErrors.amountInvested = 'Required';
+      else if (Number(form.amountInvested) <= 0) nextErrors.amountInvested = 'Must be > 0';
+      if (form.sharesPurchased.trim() && Number(form.sharesPurchased) <= 0) nextErrors.sharesPurchased = 'Must be > 0';
+    }
     setErrors(nextErrors);
     return Object.keys(nextErrors).length === 0;
   }
@@ -67,14 +91,24 @@ export default function InvestmentForm({ investment, open, onClose, onSave, owne
   function handleSave() {
     if (!validate()) return;
 
-    onSave({
+    const nextInvestment = {
       id: investment?.id ?? (`inv-${Date.now()}` as unknown as InvestmentHoldingId),
       name: form.name.trim(),
       tickerOrSymbol: form.tickerOrSymbol.trim(),
       provider: form.provider.trim() ? form.provider.trim() : null,
       ownerUserIds: form.ownerUserIds,
       archived: investment?.archived ?? false,
-    });
+    };
+    const initialPurchase = investment ? undefined : {
+      id: `inv-purchase-${Date.now()}` as unknown as InvestmentPurchaseId,
+      investmentId: nextInvestment.id,
+      purchaseDate: form.purchaseDate as ISODate,
+      amountInvested: parseFloat(form.amountInvested),
+      sharesPurchased: form.sharesPurchased.trim() ? parseFloat(form.sharesPurchased) : null,
+      note: form.note.trim() || null,
+    };
+
+    onSave({ investment: nextInvestment, initialPurchase });
     onClose();
   }
 
@@ -161,6 +195,84 @@ export default function InvestmentForm({ investment, open, onClose, onSave, owne
           />
           {errors.ownerUserIds && <p className="mt-1 text-xs text-rose-500">{errors.ownerUserIds}</p>}
         </div>
+
+        {!investment && (
+          <div className="space-y-4 rounded-xl border p-3" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
+            <div>
+              <p className="text-sm font-semibold" style={{ color: 'var(--foreground)' }}>
+                Initial Purchase
+              </p>
+              <p className="mt-0.5 text-xs" style={{ color: 'var(--muted)' }}>
+                This creates the holding and its first purchase in one step.
+              </p>
+            </div>
+
+            <div>
+              <label className="mb-1.5 block text-xs font-medium" style={{ color: 'var(--muted)' }}>
+                Purchase Date <span className="text-rose-500">*</span>
+              </label>
+              <input
+                type="date"
+                value={form.purchaseDate}
+                onChange={event => set('purchaseDate', event.target.value)}
+                className={inputCls}
+                style={{ ...inputStyle, borderColor: errors.purchaseDate ? '#f43f5e' : 'var(--border)' }}
+              />
+              {errors.purchaseDate && <p className="mt-1 text-xs text-rose-500">{errors.purchaseDate}</p>}
+            </div>
+
+            <div>
+              <label className="mb-1.5 block text-xs font-medium" style={{ color: 'var(--muted)' }}>
+                Amount Invested <span className="text-rose-500">*</span>
+              </label>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm" style={{ color: 'var(--muted)' }}>£</span>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={form.amountInvested}
+                  onChange={event => set('amountInvested', event.target.value)}
+                  placeholder="0.00"
+                  className={inputCls + ' pl-7'}
+                  style={{ ...inputStyle, borderColor: errors.amountInvested ? '#f43f5e' : 'var(--border)' }}
+                />
+              </div>
+              {errors.amountInvested && <p className="mt-1 text-xs text-rose-500">{errors.amountInvested}</p>}
+            </div>
+
+            <div>
+              <label className="mb-1.5 block text-xs font-medium" style={{ color: 'var(--muted)' }}>
+                Shares Purchased <span style={{ color: 'var(--muted)' }}>(optional)</span>
+              </label>
+              <input
+                type="number"
+                min="0"
+                step="0.0001"
+                value={form.sharesPurchased}
+                onChange={event => set('sharesPurchased', event.target.value)}
+                placeholder="e.g. 12.3456"
+                className={inputCls}
+                style={{ ...inputStyle, borderColor: errors.sharesPurchased ? '#f43f5e' : 'var(--border)' }}
+              />
+              {errors.sharesPurchased && <p className="mt-1 text-xs text-rose-500">{errors.sharesPurchased}</p>}
+            </div>
+
+            <div>
+              <label className="mb-1.5 block text-xs font-medium" style={{ color: 'var(--muted)' }}>
+                Note <span style={{ color: 'var(--muted)' }}>(optional)</span>
+              </label>
+              <input
+                type="text"
+                value={form.note}
+                onChange={event => set('note', event.target.value)}
+                placeholder="e.g. Initial contribution"
+                className={inputCls}
+                style={inputStyle}
+              />
+            </div>
+          </div>
+        )}
       </div>
     </Sheet>
   );

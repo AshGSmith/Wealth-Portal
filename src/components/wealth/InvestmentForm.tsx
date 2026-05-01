@@ -46,7 +46,7 @@ interface FormState {
 function blank(currentUserId: string | null): FormState {
   return {
     name: '',
-    useLiveInstrument: false,
+    useLiveInstrument: true,
     selectedInstrument: null,
     provider: '',
     ownerUserIds: currentUserId ? [currentUserId] : [],

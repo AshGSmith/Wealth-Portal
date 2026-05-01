@@ -22,6 +22,9 @@ type QuoteErrorPayload = {
   code: 'missing_symbol' | 'missing_api_key' | 'provider_error' | 'ticker_not_found' | 'rate_limited' | 'network_error' | 'unsupported_currency' | 'exchange_rate_error';
   message: string;
   provider?: string;
+  httpStatus?: number;
+  reason?: string;
+  requestedSymbol?: string;
 };
 
 async function fetchUsdToGbpRate() {
@@ -30,13 +33,16 @@ async function fetchUsdToGbpRate() {
   });
 
   if (!response.ok) throw new Error('Failed to load USD to GBP exchange rate.');
-  const data = await response.json() as {
-    date?: string;
-    rates?: Record<string, number>;
-  };
-  const rate = data.rates?.GBP ?? null;
-  if (!rate || !data.date) throw new Error('USD to GBP exchange rate unavailable.');
-  return { rate, date: data.date };
+  const data = await response.json() as
+    | { date?: string; rates?: Record<string, number> }
+    | Array<{ date?: string; quote?: string; rate?: number }>;
+  const latest = Array.isArray(data)
+    ? data.find(entry => entry.quote?.toUpperCase() === 'GBP' && Number.isFinite(entry.rate))
+    : null;
+  const rate = Array.isArray(data) ? latest?.rate ?? null : data.rates?.GBP ?? null;
+  const date = Array.isArray(data) ? latest?.date ?? null : data.date ?? null;
+  if (!rate || !date) throw new Error('USD to GBP exchange rate unavailable.');
+  return { rate, date };
 }
 
 function errorResponse(
@@ -45,8 +51,9 @@ function errorResponse(
   message: string,
   status: number,
   provider?: string,
+  reason?: string,
 ) {
-  return NextResponse.json({ symbol, code, message, provider } satisfies QuoteErrorPayload, { status });
+  return NextResponse.json({ symbol, code, message, provider, httpStatus: status, reason, requestedSymbol: symbol } satisfies QuoteErrorPayload, { status });
 }
 
 function inferCurrencyFromSymbol(symbol: string): 'USD' | 'GBP' | null {
@@ -102,23 +109,144 @@ type QuoteRequestMeta = {
   sourceId: string | null;
 };
 
-async function fetchYahooQuote(meta: QuoteRequestMeta): Promise<
+type QuoteProviderResult =
   | { ok: true; payload: Omit<QuotePayload, 'priceGbp' | 'exchangeRateToGbp' | 'exchangeRateDate'> }
-  | { ok: false; code: QuoteErrorPayload['code']; message: string; provider: string }
-> {
+  | { ok: false; code: QuoteErrorPayload['code']; message: string; provider: string; httpStatus?: number; reason?: string; requestedSymbol: string };
+
+async function fetchYahooChartQuote(
+  meta: QuoteRequestMeta,
+  priorReason?: string,
+): Promise<QuoteProviderResult> {
   const provider = 'Yahoo Finance';
-  const requestSymbol = meta.sourceId?.trim().toUpperCase() || meta.symbol;
+  const requestSymbol = meta.symbol.trim().toUpperCase();
 
   try {
-    const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(requestSymbol)}`;
-    const response = await fetch(url, { cache: 'no-store' });
+    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(requestSymbol)}?interval=1d&range=1d`;
+    const response = await fetch(url, {
+      cache: 'no-store',
+      headers: {
+        accept: 'application/json',
+        'user-agent': 'Mozilla/5.0 Wealth-Management-Portal/0.1',
+      },
+    });
 
     if (!response.ok) {
-      return { ok: false, code: 'provider_error', message: 'Yahoo Finance did not return a quote.', provider };
+      const reason = await response.text().catch(() => '');
+      return {
+        ok: false,
+        code: 'provider_error',
+        message: `Yahoo Finance did not return a chart quote for ${requestSymbol} (HTTP ${response.status}).`,
+        provider,
+        httpStatus: response.status,
+        reason: [priorReason, reason.slice(0, 500) || response.statusText].filter(Boolean).join(' | ') || undefined,
+        requestedSymbol: requestSymbol,
+      };
+    }
+
+    const data = await response.json() as {
+      chart?: {
+        error?: { code?: string; description?: string } | null;
+        result?: Array<{
+          meta?: {
+            currency?: string;
+            symbol?: string;
+            exchangeName?: string;
+            fullExchangeName?: string;
+            regularMarketPrice?: number;
+            regularMarketTime?: number;
+            longName?: string;
+            shortName?: string;
+          };
+          timestamp?: number[];
+          indicators?: {
+            quote?: Array<{ close?: Array<number | null> }>;
+            adjclose?: Array<{ adjclose?: Array<number | null> }>;
+          };
+        }>;
+      };
+    };
+
+    const providerError = data.chart?.error;
+    if (providerError) {
+      return {
+        ok: false,
+        code: 'provider_error',
+        message: `Yahoo Finance returned a chart error for ${requestSymbol}.`,
+        provider,
+        reason: [priorReason, providerError.description || providerError.code].filter(Boolean).join(' | ') || undefined,
+        requestedSymbol: requestSymbol,
+      };
+    }
+
+    const result = data.chart?.result?.[0];
+    const metaResult = result?.meta;
+    const closePrices = result?.indicators?.quote?.[0]?.close ?? result?.indicators?.adjclose?.[0]?.adjclose ?? [];
+    const latestClose = [...closePrices].reverse().find((value): value is number => Number.isFinite(value));
+    const latestTimestamp = [...(result?.timestamp ?? [])].reverse().find(value => Number.isFinite(value));
+    const price = metaResult?.regularMarketPrice ?? latestClose;
+    const currency = metaResult?.currency?.toUpperCase() ?? meta.currencyHint ?? null;
+    const marketTime = metaResult?.regularMarketTime ?? latestTimestamp ?? null;
+
+    if (!Number.isFinite(price) || !currency || !marketTime) {
+      return {
+        ok: false,
+        code: 'ticker_not_found',
+        message: `Yahoo Finance returned no usable chart quote for ${requestSymbol}.`,
+        provider,
+        reason: [priorReason, `No chart result with finite price, currency, and market time. Result count: ${data.chart?.result?.length ?? 0}.`].filter(Boolean).join(' | '),
+        requestedSymbol: requestSymbol,
+      };
+    }
+
+    return {
+      ok: true,
+      payload: {
+        symbol: metaResult?.symbol?.toUpperCase() ?? requestSymbol,
+        price: Number(price),
+        currency,
+        asOf: new Date(Number(marketTime) * 1000).toISOString().slice(0, 10),
+        source: provider,
+        displayName: metaResult?.longName?.trim() || metaResult?.shortName?.trim() || meta.displayName,
+        exchange: metaResult?.fullExchangeName?.trim() || metaResult?.exchangeName?.trim() || meta.exchange,
+        sourceId: requestSymbol,
+      },
+    };
+  } catch {
+    return {
+      ok: false,
+      code: 'network_error',
+      message: `Yahoo Finance chart lookup failed for ${requestSymbol} due to a network error.`,
+      provider,
+      reason: priorReason,
+      requestedSymbol: requestSymbol,
+    };
+  }
+}
+
+async function fetchYahooQuote(meta: QuoteRequestMeta): Promise<
+  QuoteProviderResult
+> {
+  const provider = 'Yahoo Finance';
+  const requestSymbol = meta.symbol.trim().toUpperCase();
+
+  try {
+    const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(requestSymbol)}&formatted=false`;
+    const response = await fetch(url, {
+      cache: 'no-store',
+      headers: {
+        accept: 'application/json',
+        'user-agent': 'Mozilla/5.0 Wealth-Management-Portal/0.1',
+      },
+    });
+
+    if (!response.ok) {
+      const reason = await response.text().catch(() => '');
+      return fetchYahooChartQuote(meta, `Quote endpoint HTTP ${response.status}: ${reason.slice(0, 500) || response.statusText}`);
     }
 
     const data = await response.json() as {
       quoteResponse?: {
+        error?: { code?: string; description?: string } | null;
         result?: Array<{
           symbol?: string;
           shortName?: string;
@@ -127,23 +255,33 @@ async function fetchYahooQuote(meta: QuoteRequestMeta): Promise<
           exchange?: string;
           currency?: string;
           regularMarketPrice?: number;
+          postMarketPrice?: number;
+          preMarketPrice?: number;
           regularMarketTime?: number;
+          postMarketTime?: number;
+          preMarketTime?: number;
         }>;
       };
     };
 
+    const providerError = data.quoteResponse?.error;
+    if (providerError) {
+      return fetchYahooChartQuote(meta, `Quote endpoint error: ${providerError.description || providerError.code || 'unknown'}`);
+    }
+
     const result = data.quoteResponse?.result?.[0];
-    const price = result?.regularMarketPrice;
+    const price = result?.regularMarketPrice ?? result?.postMarketPrice ?? result?.preMarketPrice;
     const currency = result?.currency?.toUpperCase() ?? meta.currencyHint ?? null;
     const resolvedSymbol = result?.symbol?.toUpperCase() ?? requestSymbol;
     const displayName = result?.longName?.trim() || result?.shortName?.trim() || meta.displayName;
     const exchange = result?.fullExchangeName?.trim() || result?.exchange?.trim() || meta.exchange;
-    const marketTime = result?.regularMarketTime
-      ? new Date(result.regularMarketTime * 1000).toISOString().slice(0, 10)
+    const quoteTime = result?.regularMarketTime ?? result?.postMarketTime ?? result?.preMarketTime;
+    const marketTime = quoteTime
+      ? new Date(quoteTime * 1000).toISOString().slice(0, 10)
       : null;
 
     if (!Number.isFinite(price) || !currency || !marketTime) {
-      return { ok: false, code: 'ticker_not_found', message: `Ticker ${requestSymbol} was not found on Yahoo Finance.`, provider };
+      return fetchYahooChartQuote(meta, `Quote endpoint returned no usable quote. Result count: ${data.quoteResponse?.result?.length ?? 0}.`);
     }
 
     const safePrice = Number(price);
@@ -158,17 +296,16 @@ async function fetchYahooQuote(meta: QuoteRequestMeta): Promise<
         source: provider,
         displayName,
         exchange,
-        sourceId: meta.sourceId ?? requestSymbol,
+        sourceId: requestSymbol,
       },
     };
   } catch {
-    return { ok: false, code: 'network_error', message: 'Yahoo Finance lookup failed due to a network error.', provider };
+    return { ok: false, code: 'network_error', message: `Yahoo Finance lookup failed for ${requestSymbol} due to a network error.`, provider, requestedSymbol: requestSymbol };
   }
 }
 
 async function fetchAlphaVantageQuote(meta: QuoteRequestMeta, apiKey: string): Promise<
-  | { ok: true; payload: Omit<QuotePayload, 'priceGbp' | 'exchangeRateToGbp' | 'exchangeRateDate'> }
-  | { ok: false; code: QuoteErrorPayload['code']; message: string; provider: string }
+  QuoteProviderResult
 > {
   const provider = 'Alpha Vantage';
   const symbol = meta.symbol;
@@ -178,15 +315,15 @@ async function fetchAlphaVantageQuote(meta: QuoteRequestMeta, apiKey: string): P
     const quoteResponse = await fetch(quoteUrl, { cache: 'no-store' });
 
     if (!quoteResponse.ok) {
-      return { ok: false, code: 'provider_error', message: 'Alpha Vantage did not return a quote.', provider };
+      return { ok: false, code: 'provider_error', message: `Alpha Vantage did not return a quote for ${symbol} (HTTP ${quoteResponse.status}).`, provider, httpStatus: quoteResponse.status, reason: quoteResponse.statusText || undefined, requestedSymbol: symbol };
     }
 
     const quoteJson = await quoteResponse.json() as Record<string, string | Record<string, string>>;
     if (typeof quoteJson.Note === 'string' && quoteJson.Note.length > 0) {
-      return { ok: false, code: 'rate_limited', message: 'Alpha Vantage rate limit reached.', provider };
+      return { ok: false, code: 'rate_limited', message: 'Alpha Vantage rate limit reached.', provider, reason: quoteJson.Note, requestedSymbol: symbol };
     }
     if (typeof quoteJson['Error Message'] === 'string' && quoteJson['Error Message'].length > 0) {
-      return { ok: false, code: 'ticker_not_found', message: `Ticker ${symbol} was not found on Alpha Vantage.`, provider };
+      return { ok: false, code: 'ticker_not_found', message: `Ticker ${symbol} was not found on Alpha Vantage.`, provider, reason: quoteJson['Error Message'], requestedSymbol: symbol };
     }
 
     const quoteData = quoteJson['Global Quote'] as Record<string, string> | undefined;
@@ -200,11 +337,11 @@ async function fetchAlphaVantageQuote(meta: QuoteRequestMeta, apiKey: string): P
     }
 
     if (!Number.isFinite(price) || !latestTradingDay) {
-      return { ok: false, code: 'ticker_not_found', message: `Ticker ${symbol} was not found on Alpha Vantage.`, provider };
+      return { ok: false, code: 'ticker_not_found', message: `Ticker ${symbol} was not found on Alpha Vantage.`, provider, reason: 'Global Quote did not include a finite price and latest trading day.', requestedSymbol: symbol };
     }
 
     if (!currency) {
-      return { ok: false, code: 'unsupported_currency', message: `Could not determine quote currency for ${symbol}.`, provider };
+      return { ok: false, code: 'unsupported_currency', message: `Could not determine quote currency for ${symbol}.`, provider, requestedSymbol: symbol };
     }
 
     return {
@@ -221,7 +358,7 @@ async function fetchAlphaVantageQuote(meta: QuoteRequestMeta, apiKey: string): P
       },
     };
   } catch {
-    return { ok: false, code: 'network_error', message: 'Alpha Vantage lookup failed due to a network error.', provider };
+    return { ok: false, code: 'network_error', message: `Alpha Vantage lookup failed for ${symbol} due to a network error.`, provider, requestedSymbol: symbol };
   }
 }
 
@@ -252,10 +389,7 @@ export async function GET(request: NextRequest) {
       source,
       sourceId,
     };
-    const providerResults: Array<
-      | { ok: true; payload: Omit<QuotePayload, 'priceGbp' | 'exchangeRateToGbp' | 'exchangeRateDate'> }
-      | { ok: false; code: QuoteErrorPayload['code']; message: string; provider: string }
-    > = [];
+    const providerResults: QuoteProviderResult[] = [];
 
     const yahooResult = await fetchYahooQuote(meta);
     providerResults.push(yahooResult);
@@ -273,15 +407,26 @@ export async function GET(request: NextRequest) {
         const payload = {
           symbol: rawSymbol,
           code: lastError.code,
-          message: `${lastError.message} No Alpha Vantage API key is configured for fallback.`,
+          message: `${lastError.message} Requested quoteSymbol: ${lastError.requestedSymbol}. Provider: ${lastError.provider}. ${lastError.httpStatus ? `HTTP status: ${lastError.httpStatus}. ` : ''}${lastError.reason ? `Reason: ${lastError.reason}. ` : ''}No Alpha Vantage API key is configured for fallback.`,
           provider: lastError.provider,
+          httpStatus: lastError.httpStatus,
+          reason: lastError.reason,
+          requestedSymbol: lastError.requestedSymbol,
         } satisfies QuoteErrorPayload;
         cache.set(rawSymbol, { fetchedAt: Date.now(), payload });
         return NextResponse.json(payload, { status: payload.code === 'ticker_not_found' ? 404 : payload.code === 'rate_limited' ? 429 : 503 });
       }
 
       const payload = lastError
-        ? { symbol: rawSymbol, code: lastError.code, message: lastError.message, provider: lastError.provider } satisfies QuoteErrorPayload
+        ? {
+            symbol: rawSymbol,
+            code: lastError.code,
+            message: `${lastError.message} Requested quoteSymbol: ${lastError.requestedSymbol}. Provider: ${lastError.provider}.${lastError.httpStatus ? ` HTTP status: ${lastError.httpStatus}.` : ''}${lastError.reason ? ` Reason: ${lastError.reason}.` : ''}`,
+            provider: lastError.provider,
+            httpStatus: lastError.httpStatus,
+            reason: lastError.reason,
+            requestedSymbol: lastError.requestedSymbol,
+          } satisfies QuoteErrorPayload
         : { symbol: rawSymbol, code: 'provider_error', message: 'No market data provider returned a quote.' } satisfies QuoteErrorPayload;
       cache.set(rawSymbol, { fetchedAt: Date.now(), payload });
       return NextResponse.json(payload, { status: payload.code === 'ticker_not_found' ? 404 : payload.code === 'rate_limited' ? 429 : 502 });

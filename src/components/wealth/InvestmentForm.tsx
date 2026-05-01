@@ -83,10 +83,28 @@ const inputStyle = {
 
 function instrumentSummary(instrument: InvestmentInstrumentSelection): string {
   return [
-    instrument.symbol,
+    instrument.quoteSymbol || instrument.symbol,
     instrument.exchange ?? undefined,
     instrument.currency ?? undefined,
   ].filter(Boolean).join(' · ');
+}
+
+function normalizeQuoteSymbolValue(value: string | null | undefined): string {
+  const normalized = value?.trim().toUpperCase() ?? '';
+  return normalized && !/\s/.test(normalized) ? normalized : '';
+}
+
+function quoteSymbolForInstrument(instrument: InvestmentInstrumentSelection): string {
+  return [
+    instrument.symbol,
+    instrument.ticker,
+    instrument.providerSymbol,
+    instrument.yahooSymbol,
+    instrument.quoteSymbol,
+    instrument.sourceId,
+  ]
+    .map(normalizeQuoteSymbolValue)
+    .find(Boolean) ?? '';
 }
 
 function preferredCurrencyForInstrument(
@@ -149,14 +167,23 @@ export default function InvestmentForm({ investment, open, onClose, onSave, owne
   }, [form.useLiveInstrument, searchQuery]);
 
   function selectInstrument(instrument: InvestmentInstrumentSelection) {
+    const quoteSymbol = quoteSymbolForInstrument(instrument);
+    const normalizedInstrument = {
+      ...instrument,
+      symbol: normalizeQuoteSymbolValue(instrument.symbol),
+      quoteSymbol,
+      ticker: normalizeQuoteSymbolValue(instrument.ticker) || null,
+      providerSymbol: normalizeQuoteSymbolValue(instrument.providerSymbol) || null,
+      yahooSymbol: normalizeQuoteSymbolValue(instrument.yahooSymbol) || null,
+    };
     setForm(prev => ({
       ...prev,
       useLiveInstrument: true,
-      selectedInstrument: instrument,
-      perShareCurrency: preferredCurrencyForInstrument(instrument),
+      selectedInstrument: normalizedInstrument,
+      perShareCurrency: preferredCurrencyForInstrument(normalizedInstrument),
     }));
     setErrors(prev => ({ ...prev, selectedInstrument: undefined }));
-    setSearchQuery(instrument.symbol);
+    setSearchQuery(quoteSymbol);
     setSearchState({ results: [], loading: false, error: null });
   }
 
@@ -197,7 +224,8 @@ export default function InvestmentForm({ investment, open, onClose, onSave, owne
     const nextInvestment = {
       id: investment?.id ?? (`inv-${Date.now()}` as unknown as InvestmentHoldingId),
       name: form.name.trim(),
-      tickerOrSymbol: form.selectedInstrument?.symbol ?? '',
+      tickerOrSymbol: form.selectedInstrument?.quoteSymbol ?? '',
+      quoteSymbol: form.selectedInstrument?.quoteSymbol ?? '',
       selectedInstrument: form.selectedInstrument,
       provider: form.provider.trim() ? form.provider.trim() : null,
       ownerUserIds: form.ownerUserIds,

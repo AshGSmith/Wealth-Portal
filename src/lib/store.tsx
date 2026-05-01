@@ -616,11 +616,37 @@ function normalizePensionPayments(payments: PensionPayment[]): PensionPayment[] 
   return payments.map(normalizePensionPayment);
 }
 
+function normalizeQuoteSymbolValue(value: string | null | undefined): string {
+  const normalized = value?.trim().toUpperCase() ?? '';
+  return normalized && !/\s/.test(normalized) ? normalized : '';
+}
+
+function resolveInvestmentQuoteSymbol(investment: InvestmentHolding): string {
+  if (!investment.selectedInstrument) return '';
+
+  return [
+    investment.selectedInstrument.symbol,
+    investment.selectedInstrument.ticker,
+    investment.selectedInstrument.providerSymbol,
+    investment.selectedInstrument.yahooSymbol,
+    investment.quoteSymbol,
+    investment.selectedInstrument.quoteSymbol,
+    investment.selectedInstrument.sourceId,
+  ]
+    .map(normalizeQuoteSymbolValue)
+    .find(Boolean) ?? '';
+}
+
 function normalizeInvestment(investment: InvestmentHolding, fallbackUserId: string | null): InvestmentHolding {
+  const quoteSymbol = resolveInvestmentQuoteSymbol(investment);
   const selectedInstrument = investment.selectedInstrument
     ? {
         ...investment.selectedInstrument,
         symbol: investment.selectedInstrument.symbol.trim().toUpperCase(),
+        quoteSymbol,
+        ticker: investment.selectedInstrument.ticker?.trim().toUpperCase() ?? null,
+        providerSymbol: investment.selectedInstrument.providerSymbol?.trim().toUpperCase() ?? null,
+        yahooSymbol: investment.selectedInstrument.yahooSymbol?.trim().toUpperCase() ?? null,
         displayName: investment.selectedInstrument.displayName.trim() || investment.name,
         exchange: investment.selectedInstrument.exchange ?? null,
         currency: investment.selectedInstrument.currency?.trim().toUpperCase() ?? null,
@@ -632,6 +658,7 @@ function normalizeInvestment(investment: InvestmentHolding, fallbackUserId: stri
   return {
     ...investment,
     tickerOrSymbol: investment.tickerOrSymbol.trim().toUpperCase(),
+    quoteSymbol,
     selectedInstrument,
     provider: investment.provider ?? null,
     ownerUserIds: normalizeOwnerUserIds(investment.ownerUserIds, fallbackUserId),

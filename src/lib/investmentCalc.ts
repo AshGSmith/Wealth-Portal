@@ -27,6 +27,9 @@ export type InvestmentMarketQuoteError = {
   code: 'missing_symbol' | 'missing_api_key' | 'provider_error' | 'ticker_not_found' | 'rate_limited' | 'network_error' | 'unsupported_currency' | 'exchange_rate_error';
   message: string;
   provider?: string;
+  httpStatus?: number;
+  reason?: string;
+  requestedSymbol?: string;
 };
 export type InvestmentMarketQuoteErrorMap = Record<string, InvestmentMarketQuoteError | null>;
 
@@ -60,8 +63,29 @@ type ResolvedInvestmentValue = {
 const QUOTE_CACHE_TTL_MS = 15 * 60 * 1000;
 const quoteCache = new Map<string, { fetchedAt: number; quote: InvestmentMarketQuote | null; error: InvestmentMarketQuoteError | null }>();
 
+function normalizeQuoteSymbolValue(value: string | null | undefined): string {
+  const normalized = value?.trim().toUpperCase() ?? '';
+  return normalized && !/\s/.test(normalized) ? normalized : '';
+}
+
+export function quoteSymbolForInstrument(investment: InvestmentHolding): string {
+  if (!investment.selectedInstrument) return '';
+
+  return [
+    investment.selectedInstrument.symbol,
+    investment.selectedInstrument.ticker,
+    investment.selectedInstrument.providerSymbol,
+    investment.selectedInstrument.yahooSymbol,
+    investment.quoteSymbol,
+    investment.selectedInstrument.quoteSymbol,
+    investment.selectedInstrument.sourceId,
+  ]
+    .map(normalizeQuoteSymbolValue)
+    .find(Boolean) ?? '';
+}
+
 export function investmentSelectedInstrumentSymbol(investment: InvestmentHolding): string {
-  return investment.selectedInstrument?.symbol?.trim().toUpperCase() ?? '';
+  return quoteSymbolForInstrument(investment);
 }
 
 export function investmentSelectedInstrumentDisplayName(investment: InvestmentHolding): string {
@@ -72,14 +96,14 @@ export function investmentSelectedInstrumentDisplayName(investment: InvestmentHo
 }
 
 function investmentQuoteLookupMeta(investment: InvestmentHolding) {
-  const symbol = investmentSelectedInstrumentSymbol(investment);
+  const symbol = quoteSymbolForInstrument(investment);
   return {
     symbol,
     displayName: investment.selectedInstrument?.displayName?.trim() || null,
     exchange: investment.selectedInstrument?.exchange?.trim() || null,
     currencyHint: investment.selectedInstrument?.currency?.trim().toUpperCase() || null,
     source: investment.selectedInstrument?.source?.trim() || null,
-    sourceId: investment.selectedInstrument?.sourceId?.trim() || null,
+    sourceId: symbol,
   };
 }
 
@@ -373,6 +397,9 @@ async function fetchMarketQuote(
       code: 'code' in payload ? payload.code : 'provider_error',
       message: 'message' in payload && payload.message ? payload.message : 'Failed to load live market quote.',
       provider: 'provider' in payload ? payload.provider : undefined,
+      httpStatus: 'httpStatus' in payload ? payload.httpStatus : response.status,
+      reason: 'reason' in payload ? payload.reason : undefined,
+      requestedSymbol: 'requestedSymbol' in payload ? payload.requestedSymbol : symbol,
     } satisfies InvestmentMarketQuoteError;
     quoteCache.set(symbol, { fetchedAt: Date.now(), quote: null, error });
     return { quote: null, error };

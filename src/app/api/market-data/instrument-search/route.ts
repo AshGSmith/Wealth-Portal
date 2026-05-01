@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from 'next/server';
 
 type SearchResult = {
   symbol: string;
+  quoteSymbol: string;
+  ticker: string | null;
+  providerSymbol: string | null;
+  yahooSymbol: string | null;
   displayName: string;
   exchange: string | null;
   currency: string | null;
@@ -47,14 +51,21 @@ export async function GET(request: NextRequest) {
     const allowedTypes = new Set(['EQUITY', 'ETF', 'MUTUALFUND', 'FUND']);
     const results = (data.quotes ?? [])
       .filter(item => item.symbol && (item.quoteType ? allowedTypes.has(item.quoteType.toUpperCase()) : true))
-      .map(item => ({
-        symbol: item.symbol!.trim().toUpperCase(),
-        displayName: item.longname?.trim() || item.shortname?.trim() || item.symbol!.trim().toUpperCase(),
-        exchange: item.exchDisp?.trim() || item.exchange?.trim() || null,
-        currency: item.currency?.trim().toUpperCase() || null,
-        source: 'Yahoo Finance',
-        sourceId: item.symbol!.trim().toUpperCase(),
-      }))
+      .map(item => {
+        const symbol = item.symbol!.trim().toUpperCase();
+        return {
+          symbol,
+          quoteSymbol: symbol,
+          ticker: symbol,
+          providerSymbol: symbol,
+          yahooSymbol: symbol,
+          displayName: item.longname?.trim() || item.shortname?.trim() || symbol,
+          exchange: item.exchDisp?.trim() || item.exchange?.trim() || null,
+          currency: item.currency?.trim().toUpperCase() || null,
+          source: 'Yahoo Finance',
+          sourceId: symbol,
+        };
+      })
       .filter((item, index, arr) => arr.findIndex(other => other.symbol === item.symbol) === index);
 
     cache.set(normalizedQuery, { fetchedAt: Date.now(), payload: results });

@@ -44,6 +44,13 @@ function ownershipSummary(ownerUserIds: string[], accessibleUsers: AccessibleUse
   return { label: 'Personal', detail: owner?.name ?? 'Assigned to you' };
 }
 
+function formatQuoteCurrencyValue(value: number, currency: string): string {
+  return new Intl.NumberFormat(currency === 'USD' ? 'en-US' : 'en-GB', {
+    style: 'currency',
+    currency,
+  }).format(value);
+}
+
 export default function InvestmentsPage() {
   const store = useStore();
   const { quotes: marketQuotes, errors: marketQuoteErrors } = useInvestmentMarketData(store.investments, store.investmentPurchases);
@@ -253,7 +260,7 @@ function InvestmentRow({
   const liveQuoteFailed = liveQuoteRequested && Object.prototype.hasOwnProperty.call(marketQuotes, symbolKey) && marketQuotes[symbolKey] === null;
   const liveQuoteError = liveQuoteRequested ? marketQuoteErrors[symbolKey] ?? null : null;
   const currentValueSubtitle = resolved.source === 'market'
-    ? `${marketQuotePriceSummary(resolved.marketQuote!)} · ${resolved.marketQuote?.source} · ${resolved.marketQuote?.asOf}`.trim()
+    ? `${marketQuotePriceSummary(resolved.marketQuote!)} · ${formatQuoteCurrencyValue((resolved.marketQuote?.price ?? 0) * (sharesHeld ?? 0), resolved.marketQuote?.currency ?? 'GBP')} quote · ${fmtCurrency(currentValue)} GBP · ${resolved.marketQuote?.source} · ${resolved.marketQuote?.asOf}`.trim()
     : liveQuoteFailed
       ? liveQuoteError?.message ?? `Live quote unavailable for ${symbolKey}`
       : resolved.source === 'manual'
@@ -387,7 +394,12 @@ function InvestmentRow({
               className="rounded-xl border px-3 py-2 text-xs"
               style={{ background: '#78350f14', borderColor: '#f59e0b55', color: 'var(--muted)' }}
             >
-              Live market quote unavailable for <span style={{ color: 'var(--foreground)' }}>{instrumentDisplayName}</span>{symbolKey ? ` (${symbolKey})` : ''}: {liveQuoteError?.message ?? 'provider lookup failed'}. Using {resolved.source === 'manual' ? 'your latest manual valuation' : 'cost basis fallback'} instead.
+              Live market quote unavailable for <span style={{ color: 'var(--foreground)' }}>{instrumentDisplayName}</span>{symbolKey ? ` (${symbolKey})` : ''}: {liveQuoteError?.message ?? 'provider lookup failed'}.
+              {' '}Requested quoteSymbol: <span style={{ color: 'var(--foreground)' }}>{liveQuoteError?.requestedSymbol ?? symbolKey}</span>.
+              {liveQuoteError?.provider ? ` Provider: ${liveQuoteError.provider}.` : ''}
+              {liveQuoteError?.httpStatus ? ` HTTP status: ${liveQuoteError.httpStatus}.` : ''}
+              {liveQuoteError?.reason ? ` Reason: ${liveQuoteError.reason}.` : ''}
+              {' '}Using {resolved.source === 'manual' ? 'your latest manual valuation' : 'cost basis fallback'} instead.
             </div>
           )}
           {!isArchived && (

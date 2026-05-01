@@ -326,6 +326,10 @@ export interface PensionPayment {
 
 export interface InvestmentInstrumentSelection {
   symbol: string;
+  quoteSymbol: string;
+  ticker?: string | null;
+  providerSymbol?: string | null;
+  yahooSymbol?: string | null;
   displayName: string;
   exchange: string | null;
   currency: string | null;
@@ -341,6 +345,7 @@ export interface InvestmentHolding extends OwnedRecord {
   id:             InvestmentHoldingId;
   name:           string;
   tickerOrSymbol: string;
+  quoteSymbol:    string;
   selectedInstrument: InvestmentInstrumentSelection | null;
   provider:       string | null;
   archived:       boolean;

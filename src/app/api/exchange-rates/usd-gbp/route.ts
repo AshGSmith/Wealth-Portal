@@ -10,21 +10,27 @@ export async function GET() {
       return NextResponse.json({ message: 'Failed to load exchange rate.' }, { status: 502 });
     }
 
-    const data = await response.json() as {
-      amount?: number;
-      base?: string;
-      date: string;
-      rates?: Record<string, number>;
-    };
-    const rate = data.rates?.GBP ?? null;
+    const data = await response.json() as
+      | {
+          amount?: number;
+          base?: string;
+          date?: string;
+          rates?: Record<string, number>;
+        }
+      | Array<{ date?: string; quote?: string; rate?: number }>;
+    const latest = Array.isArray(data)
+      ? data.find(entry => entry.quote?.toUpperCase() === 'GBP' && Number.isFinite(entry.rate))
+      : null;
+    const rate = Array.isArray(data) ? latest?.rate ?? null : data.rates?.GBP ?? null;
+    const rateDate = Array.isArray(data) ? latest?.date ?? null : data.date ?? null;
 
-    if (!rate || !data.date) {
+    if (!rate || !rateDate) {
       return NextResponse.json({ message: 'Exchange rate unavailable.' }, { status: 502 });
     }
 
     return NextResponse.json({
       rateToGbp: rate,
-      rateDate: data.date,
+      rateDate,
       source: 'Frankfurter',
     });
   } catch {

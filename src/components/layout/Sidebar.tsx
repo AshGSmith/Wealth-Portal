@@ -39,7 +39,7 @@ export default function Sidebar({ isAdmin }: { isAdmin: boolean }) {
       className="hidden md:flex flex-col w-56 shrink-0 border-r"
       style={{ background: 'var(--surface)', borderColor: 'var(--border)' }}
     >
-      <nav className="flex flex-col gap-1 p-3 pt-4">
+      <nav className="flex flex-col gap-1 p-3">
         {PRIMARY_NAV.map(item => (
           <NavLink key={item.href} {...item} />
         ))}

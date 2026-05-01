@@ -20,10 +20,17 @@ import type {
   InvestmentHolding, InvestmentPurchase, InvestmentValuationHistory,
   PotId,
   IncomeSourceId,
+  InvestmentValuationHistoryId,
+  ISODate,
 } from '@/lib/types';
 import type { AccessibleUser } from '@/lib/auth/types';
 import type { PersistedAppData } from '@/lib/data/server';
 import { isExpenseReimbursementSource } from '@/lib/incomeCalc';
+import {
+  investmentSelectedInstrumentSymbol,
+  totalSharesHeldForInvestment,
+  useInvestmentMarketData,
+} from '@/lib/investmentCalc';
 
 // ─── Legacy localStorage helpers ──────────────────────────────────────────────
 
@@ -303,6 +310,10 @@ function removeItemsFromUnlockedBudgets(
 
 function currentYearMonth(): string {
   return new Date().toISOString().slice(0, 7);
+}
+
+function currentIsoDate(): ISODate {
+  return new Date().toISOString().slice(0, 10) as ISODate;
 }
 
 function normalizeOwnerUserIds(ownerUserIds: string[] | null | undefined, fallbackUserId: string | null): string[] {
@@ -695,6 +706,10 @@ function normalizeInvestmentValuationHistoryEntry(entry: InvestmentValuationHist
 
 function normalizeInvestmentValuationHistory(entries: InvestmentValuationHistory[]): InvestmentValuationHistory[] {
   return entries.map(normalizeInvestmentValuationHistoryEntry);
+}
+
+function autoLiveValuationId(investmentId: string, valuationDate: string): InvestmentValuationHistoryId {
+  return `inv-auto-valuation-${investmentId}-${valuationDate}` as unknown as InvestmentValuationHistoryId;
 }
 
 function normalizeDebtHistoryEntry(entry: DebtHistory): DebtHistory {
@@ -1133,6 +1148,7 @@ export function AppProvider({
   const visibleInvestmentIds = new Set(visibleInvestments.map(investment => investment.id as string));
   const visibleInvestmentPurchases = investmentPurchases.filter(entry => visibleInvestmentIds.has(entry.investmentId as string));
   const visibleInvestmentValuationHistory = investmentValuationHistory.filter(entry => visibleInvestmentIds.has(entry.investmentId as string));
+  const { quotes: visibleMarketQuotes } = useInvestmentMarketData(visibleInvestments, visibleInvestmentPurchases);
   const visibleBudgets = budgets
     .map(budget => ({
       ...budget,
@@ -1150,6 +1166,77 @@ export function AppProvider({
     if (!hydrated) return;
     saveLocalValue(ACTIVE_BUDGET_MONTH_KEY, activeBudgetMonth);
   }, [activeBudgetMonth, hydrated]);
+
+  useEffect(() => {
+    if (!hydrated || !currentUserId) return;
+
+    const valuationDate = currentIsoDate();
+    const nextAutoValuations = visibleInvestments
+      .filter(investment => !investment.archived && investment.selectedInstrument !== null)
+      .flatMap(investment => {
+        const symbol = investmentSelectedInstrumentSymbol(investment);
+        const quote = symbol ? visibleMarketQuotes[symbol] ?? null : null;
+        const sharesHeld = totalSharesHeldForInvestment(investment.id, visibleInvestmentPurchases);
+
+        if (!quote || sharesHeld === null) return [];
+
+        const currentValue = quote.priceGbp * sharesHeld;
+        if (!Number.isFinite(currentValue)) return [];
+
+        const note = [
+          `Auto live valuation from ${quote.source}`,
+          `${quote.symbol} ${quote.currency} ${quote.price.toFixed(2)}/share`,
+          `GBP ${quote.priceGbp.toFixed(2)}/share`,
+          `quote as of ${quote.asOf}`,
+        ].join(' · ');
+
+        return [{
+          id: autoLiveValuationId(investment.id as string, valuationDate),
+          investmentId: investment.id,
+          valuationDate,
+          currentValue,
+          note,
+        } satisfies InvestmentValuationHistory];
+      });
+
+    if (nextAutoValuations.length === 0) return;
+
+    const timeoutId = window.setTimeout(() => {
+      setInvestmentValuationHistory(prev => {
+        let changed = false;
+        const next = [...prev];
+
+        for (const valuation of nextAutoValuations) {
+          const existingIndex = next.findIndex(entry => entry.id === valuation.id);
+          if (existingIndex === -1) {
+            next.push(valuation);
+            changed = true;
+            continue;
+          }
+
+          const existing = next[existingIndex];
+          const valueChanged = Math.abs(existing.currentValue - valuation.currentValue) >= 0.01;
+          const noteChanged = existing.note !== valuation.note;
+          if (!valueChanged && !noteChanged) continue;
+
+          next[existingIndex] = valuation;
+          changed = true;
+        }
+
+        return changed ? next : prev;
+      });
+    }, 0);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [
+    currentUserId,
+    hydrated,
+    visibleInvestmentPurchases,
+    visibleInvestments,
+    visibleMarketQuotes,
+  ]);
 
   useEffect(() => {
     if (!hydrated || !currentUserId) return;

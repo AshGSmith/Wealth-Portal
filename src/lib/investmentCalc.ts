@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type {
   InvestmentHolding,
   InvestmentPurchase,
@@ -61,6 +61,7 @@ type ResolvedInvestmentValue = {
 };
 
 const QUOTE_CACHE_TTL_MS = 15 * 60 * 1000;
+const QUOTE_REFRESH_INTERVAL_MS = 30 * 60 * 1000;
 const quoteCache = new Map<string, { fetchedAt: number; quote: InvestmentMarketQuote | null; error: InvestmentMarketQuoteError | null }>();
 
 function normalizeQuoteSymbolValue(value: string | null | undefined): string {
@@ -433,13 +434,20 @@ export function useInvestmentMarketData(
         }, {}),
     ).sort((a, b) => investmentSelectedInstrumentSymbol(a).localeCompare(investmentSelectedInstrumentSymbol(b)));
   }, [investments, purchases]);
+  const eligibleLookupKey = eligibleLookups.map(investment => investmentSelectedInstrumentSymbol(investment)).join('|');
+  const eligibleLookupsRef = useRef(eligibleLookups);
+
+  useEffect(() => {
+    eligibleLookupsRef.current = eligibleLookups;
+  }, [eligibleLookups]);
 
   useEffect(() => {
     let cancelled = false;
 
     async function loadQuotes() {
+      const currentLookups = eligibleLookupsRef.current;
       const nextEntries = await Promise.all(
-        eligibleLookups.map(async investment => [investmentSelectedInstrumentSymbol(investment), await fetchMarketQuote(investment)] as const),
+        currentLookups.map(async investment => [investmentSelectedInstrumentSymbol(investment), await fetchMarketQuote(investment)] as const),
       );
 
       if (cancelled) return;
@@ -461,14 +469,20 @@ export function useInvestmentMarketData(
       });
     }
 
-    if (eligibleLookups.length > 0) {
+    let intervalId: number | null = null;
+
+    if (eligibleLookupsRef.current.length > 0) {
       void loadQuotes();
+      intervalId = window.setInterval(() => {
+        void loadQuotes();
+      }, QUOTE_REFRESH_INTERVAL_MS);
     }
 
     return () => {
       cancelled = true;
+      if (intervalId) window.clearInterval(intervalId);
     };
-  }, [eligibleLookups]);
+  }, [eligibleLookupKey]);
 
   return { quotes, errors };
 }

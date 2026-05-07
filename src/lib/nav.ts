@@ -1,6 +1,6 @@
 import {
   LayoutDashboard, Wallet, TrendingUp,
-  Receipt, PiggyBank, Banknote, Layers, FileBarChart, Users,
+  Receipt, PiggyBank, Banknote, Layers, FileBarChart, Users, CreditCard,
 } from 'lucide-react';
 
 export const PRIMARY_NAV = [
@@ -13,6 +13,7 @@ const BASE_SECONDARY_NAV = [
   { href: '/income',   label: 'Income',   icon: Banknote },
   { href: '/pots',     label: 'Pots',     icon: Layers },
   { href: '/expenses', label: 'Expenses', icon: Receipt },
+  { href: '/subscriptions', label: 'Subscriptions', icon: CreditCard },
   { href: '/savings',  label: 'Savings',  icon: PiggyBank },
   { href: '/reports',  label: 'Reports',  icon: FileBarChart },
 ] as const;

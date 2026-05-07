@@ -1,4 +1,13 @@
-import type { Expense, Saving, SavingAmountHistory, PotId, IncomeSourceId, IncomeSourceType } from './types';
+import type {
+  Expense,
+  Saving,
+  SavingAmountHistory,
+  Subscription,
+  SubscriptionPriceHistory,
+  PotId,
+  IncomeSourceId,
+  IncomeSourceType,
+} from './types';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -101,6 +110,67 @@ function toResolvedExpenseItem(e: Expense): ResolvedLineItem {
   };
 }
 
+function monthlyEquivalent(amount: number, schedule: Subscription['paymentSchedule']): number {
+  if (schedule === 'Weekly') return (amount * 52) / 12;
+  return amount;
+}
+
+export function subscriptionPriceForMonth(
+  subscription: Subscription,
+  history: SubscriptionPriceHistory[],
+  month: string,
+): { cost: number; currency: Subscription['currency'] } {
+  const match = history
+    .filter(entry => entry.subscriptionId === subscription.id && entry.effectiveDate.slice(0, 7) <= month)
+    .sort((a, b) => a.effectiveDate.localeCompare(b.effectiveDate))
+    .at(-1);
+
+  return {
+    cost: match?.cost ?? subscription.cost,
+    currency: match?.currency ?? subscription.currency,
+  };
+}
+
+function toResolvedSubscriptionItem(
+  subscription: Subscription,
+  amount: number,
+): ResolvedLineItem {
+  return {
+    id: `subscription-${subscription.id}`,
+    sourceType: 'expense',
+    sourceId: subscription.id,
+    incomeSourceId: subscription.incomeSourceId,
+    defaultIncomeSourceId: subscription.incomeSourceId,
+    incomeSourceName: '',
+    ownerUserIds: subscription.ownerUserIds,
+    defaultOwnerUserIds: subscription.ownerUserIds,
+    name: subscription.name,
+    amount,
+    potId: subscription.potId,
+    defaultPotId: subscription.potId,
+    potName: '',
+    isCritical: subscription.isCriticalExpense,
+  };
+}
+
+export function resolveSubscriptionForMonth(
+  subscription: Subscription,
+  history: SubscriptionPriceHistory[],
+  month: string,
+): ResolvedLineItem | null {
+  if (subscription.archived) return null;
+  if (subscription.paymentDate.slice(0, 7) > month) return null;
+  if (subscription.status === 'Cancelled' && subscription.endDate && subscription.endDate.slice(0, 7) < month) return null;
+
+  if (subscription.paymentSchedule === 'Yearly') {
+    const dueMonth = subscription.paymentDate.slice(5, 7);
+    if (month.slice(5, 7) !== dueMonth) return null;
+  }
+
+  const price = subscriptionPriceForMonth(subscription, history, month);
+  return toResolvedSubscriptionItem(subscription, monthlyEquivalent(price.cost, subscription.paymentSchedule));
+}
+
 export function resolveExpenseForMonth(
   expense: Expense,
   month: string,
@@ -136,11 +206,18 @@ export function resolveItemsForMonth(
   expenses: Expense[],
   savings:  Saving[],
   savingAmountHistory: SavingAmountHistory[] = [],
+  subscriptions: Subscription[] = [],
+  subscriptionPriceHistory: SubscriptionPriceHistory[] = [],
 ): ResolvedLineItem[] {
   const out: ResolvedLineItem[] = [];
 
   for (const e of expenses) {
     const resolved = resolveExpenseForMonth(e, month);
+    if (resolved) out.push(resolved);
+  }
+
+  for (const subscription of subscriptions) {
+    const resolved = resolveSubscriptionForMonth(subscription, subscriptionPriceHistory, month);
     if (resolved) out.push(resolved);
   }
 
@@ -174,9 +251,11 @@ export function createBudget(
   expenses: Expense[],
   savings:  Saving[],
   savingAmountHistory: SavingAmountHistory[] = [],
+  subscriptions: Subscription[] = [],
+  subscriptionPriceHistory: SubscriptionPriceHistory[] = [],
 ): LocalBudget {
   const preparedExpenses = applyPendingOneOffExpensesToBudgetMonth(month, expenses);
-  const items = resolveItemsForMonth(month, preparedExpenses, savings, savingAmountHistory);
+  const items = resolveItemsForMonth(month, preparedExpenses, savings, savingAmountHistory, subscriptions, subscriptionPriceHistory);
 
   return {
     id:       `budget-${Date.now()}`,
@@ -194,6 +273,8 @@ export function refreshBudget(
   expenses: Expense[],
   savings: Saving[],
   savingAmountHistory: SavingAmountHistory[] = [],
+  subscriptions: Subscription[] = [],
+  subscriptionPriceHistory: SubscriptionPriceHistory[] = [],
 ): LocalBudget {
   if (budget.locked) {
     return budget;
@@ -204,6 +285,8 @@ export function refreshBudget(
     applyPendingOneOffExpensesToBudgetMonth(budget.month, expenses),
     savings,
     savingAmountHistory,
+    subscriptions,
+    subscriptionPriceHistory,
   );
   const existingItemsById = new Map(budget.items.map(item => [item.id, item]));
 

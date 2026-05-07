@@ -12,7 +12,7 @@ import {
 } from '@/lib/budgetLogic';
 import { buildLockedBudgetSnapshot, calcBudget } from '@/lib/budgetCalc';
 import type {
-  IncomeSource, IncomeEntry, Pot, Expense, Saving, SalaryHistory, SavingAmountHistory,
+  IncomeSource, IncomeEntry, Pot, Expense, Subscription, SubscriptionPriceHistory, Saving, SalaryHistory, SavingAmountHistory,
   Mortgage, MortgagePayment, Property,
   SavingsAccount, SavingsHistory,
   Debt, DebtHistory, DebtTransaction,
@@ -47,6 +47,8 @@ const STORAGE_KEYS = [
   'wmp:salaryHistory',
   'wmp:pots',
   'wmp:expenses',
+  'wmp:subscriptions',
+  'wmp:subscriptionPriceHistory',
   'wmp:savings',
   'wmp:savingAmountHistory',
   'wmp:mortgages',
@@ -122,6 +124,8 @@ function emptyPersistedAppData(): PersistedAppData {
     salaryHistory: [],
     pots: [],
     expenses: [],
+    subscriptions: [],
+    subscriptionPriceHistory: [],
     savings: [],
     savingAmountHistory: [],
     mortgages: [],
@@ -170,6 +174,8 @@ interface AppStore {
   salaryHistory:     SalaryHistory[];
   pots:              Pot[];
   expenses:          Expense[];
+  subscriptions:     Subscription[];
+  subscriptionPriceHistory: SubscriptionPriceHistory[];
   savings:           Saving[];
   savingAmountHistory: SavingAmountHistory[];
 
@@ -190,6 +196,9 @@ interface AppStore {
   removeSalaryHistory: (id: string) => void;
   upsertPot:     (p: Pot)          => void;
   upsertExpense: (e: Expense)      => void;
+  upsertSubscription: (subscription: Subscription) => void;
+  upsertSubscriptionPriceHistory: (entry: SubscriptionPriceHistory) => void;
+  removeSubscriptionPriceHistory: (id: string) => void;
   upsertSaving:  (s: Saving)       => void;
   upsertSavingAmountHistory: (h: SavingAmountHistory) => void;
   removeSavingAmountHistory: (id: string) => void;
@@ -202,6 +211,8 @@ interface AppStore {
   removePot:          (id: string) => void;
   setExpenseArchived: (id: string, archived: boolean) => void;
   removeExpense:      (id: string) => void;
+  setSubscriptionArchived: (id: string, archived: boolean) => void;
+  removeSubscription:      (id: string) => void;
   setSavingArchived:  (id: string, archived: boolean) => void;
   removeSaving:       (id: string) => void;
 
@@ -511,6 +522,58 @@ function normalizeExpenseWithSource(
   };
 }
 
+function addMonthsToIsoDate(value: string, months: number): ISODate {
+  const date = new Date(`${value || currentIsoDate()}T00:00:00`);
+  const targetDay = date.getDate();
+  date.setMonth(date.getMonth() + months);
+  if (date.getDate() !== targetDay) date.setDate(0);
+  return date.toISOString().slice(0, 10) as ISODate;
+}
+
+function defaultSubscriptionEndDate(subscription: Subscription): ISODate {
+  const paymentDate = subscription.paymentDate || currentIsoDate();
+  if (subscription.paymentSchedule === 'Weekly') {
+    const date = new Date(`${paymentDate}T00:00:00`);
+    date.setDate(date.getDate() + 7);
+    return date.toISOString().slice(0, 10) as ISODate;
+  }
+  return addMonthsToIsoDate(paymentDate, subscription.paymentSchedule === 'Yearly' ? 12 : 1);
+}
+
+function normalizeSubscription(subscription: Subscription, fallbackUserId: string | null): Subscription {
+  const status = subscription.status ?? 'Current';
+  return {
+    ...subscription,
+    cost: subscription.cost ?? 0,
+    currency: subscription.currency ?? 'GBP',
+    paymentSchedule: subscription.paymentSchedule ?? 'Monthly',
+    freeTrial: subscription.freeTrial ?? false,
+    freeTrialExpiryDate: subscription.freeTrial ? subscription.freeTrialExpiryDate ?? null : null,
+    category: subscription.category ?? 'Other',
+    status,
+    endDate: status === 'Cancelled' ? subscription.endDate ?? defaultSubscriptionEndDate(subscription) : null,
+    paymentMethod: subscription.paymentMethod ?? 'Card',
+    isCriticalExpense: subscription.isCriticalExpense ?? false,
+    ownerUserIds: normalizeOwnerUserIds(subscription.ownerUserIds, fallbackUserId),
+    archived: subscription.archived ?? false,
+  };
+}
+
+function normalizeSubscriptions(subscriptions: Subscription[], fallbackUserId: string | null): Subscription[] {
+  return subscriptions.map(subscription => normalizeSubscription(subscription, fallbackUserId));
+}
+
+function normalizeSubscriptionPriceHistoryEntry(entry: SubscriptionPriceHistory): SubscriptionPriceHistory {
+  return {
+    ...entry,
+    currency: entry.currency ?? 'GBP',
+  };
+}
+
+function normalizeSubscriptionPriceHistory(entries: SubscriptionPriceHistory[]): SubscriptionPriceHistory[] {
+  return entries.map(normalizeSubscriptionPriceHistoryEntry);
+}
+
 function normalizeSavingWithSource(
   saving: Saving & { incomeSourceId?: string | null },
   pots: Array<Pot & { incomeSourceId?: string }>,
@@ -529,10 +592,12 @@ function normalizeBudgets(
   sources: IncomeSource[],
   pots: Pot[],
   expenses: Expense[],
+  subscriptions: Subscription[],
   savings: Saving[],
   fallbackUserId: string | null,
 ): LocalBudget[] {
   const expenseOwners = new Map(expenses.map(expense => [expense.id as string, expense.ownerUserIds]));
+  const subscriptionOwners = new Map(subscriptions.map(subscription => [subscription.id as string, subscription.ownerUserIds]));
   const savingOwners = new Map(savings.map(saving => [saving.id as string, saving.ownerUserIds]));
   const sourceNames = new Map(sources.map(source => [source.id as string, source.provider]));
   const potNames = new Map(pots.map(pot => [pot.id as string, pot.name]));
@@ -542,7 +607,7 @@ function normalizeBudgets(
       ...budget,
       items: budget.items.map(item => {
         const sourceOwners = item.sourceType === 'expense'
-          ? expenseOwners.get(item.sourceId)
+          ? expenseOwners.get(item.sourceId) ?? subscriptionOwners.get(item.sourceId)
           : savingOwners.get(item.sourceId);
         const ownerUserIds = normalizeOwnerUserIds(item.ownerUserIds ?? sourceOwners, fallbackUserId);
         return {
@@ -804,12 +869,22 @@ function normalizePersistedDataSnapshot(
   );
 
   return {
-    budgets: normalizeBudgets(migratedIncomeData.budgets, migratedIncomeData.sources, normalizedPots, migratedIncomeData.expenses, migratedIncomeData.savings, fallbackUserId),
+    budgets: normalizeBudgets(
+      migratedIncomeData.budgets,
+      migratedIncomeData.sources,
+      normalizedPots,
+      migratedIncomeData.expenses,
+      normalizeSubscriptions(snapshot.subscriptions, fallbackUserId),
+      migratedIncomeData.savings,
+      fallbackUserId,
+    ),
     sources: migratedIncomeData.sources,
     entries: normalizeIncomeEntries(migratedIncomeData.entries),
     salaryHistory: migratedIncomeData.salaryHistory,
     pots: normalizedPots,
     expenses: migratedIncomeData.expenses,
+    subscriptions: normalizeSubscriptions(snapshot.subscriptions, fallbackUserId),
+    subscriptionPriceHistory: normalizeSubscriptionPriceHistory(snapshot.subscriptionPriceHistory),
     savings: migratedIncomeData.savings,
     savingAmountHistory: snapshot.savingAmountHistory,
     mortgages: snapshot.mortgages.map(mortgage => normalizeMortgage(mortgage, fallbackUserId)),
@@ -838,6 +913,8 @@ function loadLegacyLocalAppData(fallbackUserId: string | null): PersistedAppData
     salaryHistory: load('wmp:salaryHistory', emptyData.salaryHistory),
     pots: load('wmp:pots', emptyData.pots),
     expenses: load('wmp:expenses', emptyData.expenses),
+    subscriptions: load('wmp:subscriptions', emptyData.subscriptions),
+    subscriptionPriceHistory: load('wmp:subscriptionPriceHistory', emptyData.subscriptionPriceHistory),
     savings: load('wmp:savings', emptyData.savings),
     savingAmountHistory: load('wmp:savingAmountHistory', emptyData.savingAmountHistory),
     mortgages: load('wmp:mortgages', emptyData.mortgages),
@@ -899,6 +976,8 @@ function applySnapshotToState(
     setSalaryHistory: (value: SalaryHistory[]) => void;
     setPots: (value: Pot[]) => void;
     setExpenses: (value: Expense[]) => void;
+    setSubscriptions: (value: Subscription[]) => void;
+    setSubscriptionPriceHistory: (value: SubscriptionPriceHistory[]) => void;
     setSavings: (value: Saving[]) => void;
     setSavingAmountHistory: (value: SavingAmountHistory[]) => void;
     setMortgages: (value: Mortgage[]) => void;
@@ -923,6 +1002,8 @@ function applySnapshotToState(
   setters.setSalaryHistory(snapshot.salaryHistory);
   setters.setPots(snapshot.pots);
   setters.setExpenses(snapshot.expenses);
+  setters.setSubscriptions(snapshot.subscriptions);
+  setters.setSubscriptionPriceHistory(snapshot.subscriptionPriceHistory);
   setters.setSavings(snapshot.savings);
   setters.setSavingAmountHistory(snapshot.savingAmountHistory);
   setters.setMortgages(snapshot.mortgages);
@@ -964,6 +1045,8 @@ export function AppProvider({
   const [salaryHistory,     setSalaryHistory]     = useState<SalaryHistory[]>(initialData.salaryHistory);
   const [pots,              setPots]              = useState<Pot[]>         (initialData.pots);
   const [expenses,          setExpenses]          = useState<Expense[]>     (initialData.expenses);
+  const [subscriptions,     setSubscriptions]     = useState<Subscription[]>(initialData.subscriptions);
+  const [subscriptionPriceHistory, setSubscriptionPriceHistory] = useState<SubscriptionPriceHistory[]>(initialData.subscriptionPriceHistory);
   const [savings,           setSavings]           = useState<Saving[]>      (initialData.savings);
   const [savingAmountHistory, setSavingAmountHistory] = useState<SavingAmountHistory[]>(initialData.savingAmountHistory);
 
@@ -1008,6 +1091,8 @@ export function AppProvider({
             setSalaryHistory,
             setPots,
             setExpenses,
+            setSubscriptions,
+            setSubscriptionPriceHistory,
             setSavings,
             setSavingAmountHistory,
             setMortgages,
@@ -1053,6 +1138,8 @@ export function AppProvider({
           setSalaryHistory,
           setPots,
           setExpenses,
+          setSubscriptions,
+          setSubscriptionPriceHistory,
           setSavings,
           setSavingAmountHistory,
           setMortgages,
@@ -1088,6 +1175,8 @@ export function AppProvider({
           setSalaryHistory,
           setPots,
           setExpenses,
+          setSubscriptions,
+          setSubscriptionPriceHistory,
           setSavings,
           setSavingAmountHistory,
           setMortgages,
@@ -1126,6 +1215,9 @@ export function AppProvider({
   const visiblePots = filterOwnedRecords(pots, accessibleUserIds);
   const visiblePotIds = new Set(visiblePots.map(pot => pot.id as string));
   const visibleExpenses = filterOwnedRecords(expenses, accessibleUserIds).filter(expense => visiblePotIds.has(expense.potId as string));
+  const visibleSubscriptions = filterOwnedRecords(subscriptions, accessibleUserIds).filter(subscription => visiblePotIds.has(subscription.potId as string));
+  const visibleSubscriptionIds = new Set(visibleSubscriptions.map(subscription => subscription.id as string));
+  const visibleSubscriptionPriceHistory = subscriptionPriceHistory.filter(entry => visibleSubscriptionIds.has(entry.subscriptionId as string));
   const visibleSavings = filterOwnedRecords(savings, accessibleUserIds).filter(saving => visiblePotIds.has(saving.potId as string));
   const visibleSavingIds = new Set(visibleSavings.map(saving => saving.id as string));
   const visibleSavingAmountHistory = savingAmountHistory.filter(entry => visibleSavingIds.has(entry.savingId as string));
@@ -1241,6 +1333,48 @@ export function AppProvider({
   useEffect(() => {
     if (!hydrated || !currentUserId) return;
 
+    const todayDate = currentIsoDate();
+    const expiredIds = new Set(
+      visibleSubscriptions
+        .filter(subscription =>
+          !subscription.archived
+          && subscription.status === 'Cancelled'
+          && subscription.endDate !== null
+          && subscription.endDate < todayDate
+        )
+        .map(subscription => subscription.id as string),
+    );
+
+    if (expiredIds.size === 0) return;
+
+    const timeoutId = window.setTimeout(() => {
+      const nextVisibleSubscriptions = visibleSubscriptions.map(subscription =>
+        expiredIds.has(subscription.id as string)
+          ? { ...subscription, archived: true }
+          : subscription
+      );
+
+      setSubscriptions(prev => prev.map(subscription =>
+        expiredIds.has(subscription.id as string)
+          ? { ...subscription, archived: true }
+          : subscription
+      ));
+      refreshUnlockedBudgetsForSubscriptions(nextVisibleSubscriptions, visibleSubscriptionPriceHistory);
+    }, 0);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [
+    currentUserId,
+    hydrated,
+    visibleSubscriptionPriceHistory,
+    visibleSubscriptions,
+  ]);
+
+  useEffect(() => {
+    if (!hydrated || !currentUserId) return;
+
     const timeoutId = window.setTimeout(() => {
       void savePersistedAppData({
         budgets,
@@ -1249,6 +1383,8 @@ export function AppProvider({
         salaryHistory,
         pots,
         expenses,
+        subscriptions,
+        subscriptionPriceHistory,
         savings,
         savingAmountHistory,
         mortgages,
@@ -1279,6 +1415,8 @@ export function AppProvider({
     debts,
     entries,
     expenses,
+    subscriptions,
+    subscriptionPriceHistory,
     hydrated,
     mortgagePayments,
     mortgages,
@@ -1320,6 +1458,8 @@ export function AppProvider({
         setSalaryHistory,
         setPots,
         setExpenses,
+        setSubscriptions,
+        setSubscriptionPriceHistory,
         setSavings,
         setSavingAmountHistory,
         setMortgages,
@@ -1358,6 +1498,30 @@ export function AppProvider({
     setLegacyMigrationDismissed(true);
   }
 
+  function refreshUnlockedBudgetsForSubscriptions(
+    nextSubscriptions = visibleSubscriptions,
+    nextSubscriptionPriceHistory = visibleSubscriptionPriceHistory,
+  ): void {
+    setBudgets(prev => prev.map(budget => {
+      if (budget.locked) return budget;
+      return decorateBudgetItemsWithLabels(
+        sanitizeBudgetForOneOffExpenses(
+          refreshBudget(
+            budget,
+            visibleExpenses,
+            visibleSavings,
+            visibleSavingAmountHistory,
+            nextSubscriptions,
+            nextSubscriptionPriceHistory,
+          ),
+          visibleExpenses,
+        ),
+        visiblePots,
+        visibleSources,
+      );
+    }));
+  }
+
   const store: AppStore = {
     hydrated,
     currentUserId,
@@ -1376,6 +1540,8 @@ export function AppProvider({
     salaryHistory: visibleSalaryHistory,
     pots: visiblePots,
     expenses: visibleExpenses,
+    subscriptions: visibleSubscriptions,
+    subscriptionPriceHistory: visibleSubscriptionPriceHistory,
     savings: visibleSavings,
     savingAmountHistory: visibleSavingAmountHistory,
 
@@ -1404,7 +1570,7 @@ export function AppProvider({
       setBudgets(prev => {
         const budget = decorateBudgetItemsWithLabels(
           sanitizeBudgetForOneOffExpenses(
-            createBudget(month, visibleNextExpenses, visibleSavings, visibleSavingAmountHistory),
+            createBudget(month, visibleNextExpenses, visibleSavings, visibleSavingAmountHistory, visibleSubscriptions, visibleSubscriptionPriceHistory),
             visibleNextExpenses,
           ),
           visiblePots,
@@ -1431,7 +1597,7 @@ export function AppProvider({
         if (budget.locked) return budget;
         return decorateBudgetItemsWithLabels(
           sanitizeBudgetForOneOffExpenses(
-            refreshBudget(budget, visibleNextExpenses, visibleSavings, visibleSavingAmountHistory),
+            refreshBudget(budget, visibleNextExpenses, visibleSavings, visibleSavingAmountHistory, visibleSubscriptions, visibleSubscriptionPriceHistory),
             visibleNextExpenses,
           ),
           visiblePots,
@@ -1524,6 +1690,23 @@ export function AppProvider({
         ));
       }
     },
+    upsertSubscription: subscription => {
+      const normalized = normalizeSubscription(subscription, currentUserId);
+      const nextVisibleSubscriptions = upsert(visibleSubscriptions, normalized);
+      setSubscriptions(prev => upsert(prev, normalized));
+      refreshUnlockedBudgetsForSubscriptions(nextVisibleSubscriptions, visibleSubscriptionPriceHistory);
+    },
+    upsertSubscriptionPriceHistory: entry => {
+      const normalized = normalizeSubscriptionPriceHistoryEntry(entry);
+      const nextVisibleHistory = upsert(visibleSubscriptionPriceHistory, normalized);
+      setSubscriptionPriceHistory(prev => upsert(prev, normalized));
+      refreshUnlockedBudgetsForSubscriptions(visibleSubscriptions, nextVisibleHistory);
+    },
+    removeSubscriptionPriceHistory: id => {
+      const nextVisibleHistory = visibleSubscriptionPriceHistory.filter(entry => entry.id !== id);
+      setSubscriptionPriceHistory(prev => prev.filter(entry => entry.id !== id));
+      refreshUnlockedBudgetsForSubscriptions(visibleSubscriptions, nextVisibleHistory);
+    },
     upsertSaving:  s  => setSavings(prev  => upsert(prev, {
       ...s,
       ownerUserIds: normalizeOwnerUserIds(s.ownerUserIds, currentUserId),
@@ -1534,12 +1717,15 @@ export function AppProvider({
     setSourceArchived:  (id, v) => setSources(prev  => setArchived(prev, id, v)),
     removeSource: id => {
       const sourceExpenseIds = new Set(expenses.filter(expense => expense.incomeSourceId === id).map(expense => expense.id as string));
+      const sourceSubscriptionIds = new Set(subscriptions.filter(subscription => subscription.incomeSourceId === id).map(subscription => subscription.id as string));
       const sourceSavingIds = new Set(savings.filter(saving => saving.incomeSourceId === id).map(saving => saving.id as string));
 
       setSources(prev => removeById(prev, id));
       setEntries(prev => prev.filter(entry => entry.incomeSourceId !== id));
       setSalaryHistory(prev => prev.filter(entry => entry.incomeSourceId !== id));
       setExpenses(prev => prev.filter(expense => expense.incomeSourceId !== id));
+      setSubscriptions(prev => prev.filter(subscription => subscription.incomeSourceId !== id));
+      setSubscriptionPriceHistory(prev => prev.filter(entry => !sourceSubscriptionIds.has(entry.subscriptionId as string)));
       setSavings(prev => prev.filter(saving => saving.incomeSourceId !== id));
       setSavingAmountHistory(prev => prev.filter(entry => !sourceSavingIds.has(entry.savingId as string)));
       setBudgets(prev => removeItemsFromUnlockedBudgets(prev, item =>
@@ -1553,10 +1739,13 @@ export function AppProvider({
     setPotArchived:     (id, v) => setPots(prev      => setArchived(prev, id, v)),
     removePot:          id => {
       const potExpenseIds = new Set(expenses.filter(expense => expense.potId === id).map(expense => expense.id as string));
+      const potSubscriptionIds = new Set(subscriptions.filter(subscription => subscription.potId === id).map(subscription => subscription.id as string));
       const potSavingIds = new Set(savings.filter(saving => saving.potId === id).map(saving => saving.id as string));
 
       setPots(prev => removeById(prev, id));
       setExpenses(prev => prev.filter(expense => expense.potId !== id));
+      setSubscriptions(prev => prev.filter(subscription => subscription.potId !== id));
+      setSubscriptionPriceHistory(prev => prev.filter(entry => !potSubscriptionIds.has(entry.subscriptionId as string)));
       setSavings(prev => prev.filter(saving => saving.potId !== id));
       setSavingAmountHistory(prev => prev.filter(entry => !potSavingIds.has(entry.savingId as string)));
       setBudgets(prev => removeItemsFromUnlockedBudgets(prev, item =>
@@ -1569,6 +1758,18 @@ export function AppProvider({
     removeExpense:      id => {
       setExpenses(prev => removeById(prev, id));
       setBudgets(prev => removeItemsFromUnlockedBudgets(prev, item => item.sourceType === 'expense' && item.sourceId === id));
+    },
+    setSubscriptionArchived: (id, v) => {
+      const nextVisibleSubscriptions = setArchived(visibleSubscriptions, id, v);
+      setSubscriptions(prev => setArchived(prev, id, v));
+      refreshUnlockedBudgetsForSubscriptions(nextVisibleSubscriptions, visibleSubscriptionPriceHistory);
+    },
+    removeSubscription: id => {
+      const nextVisibleSubscriptions = visibleSubscriptions.filter(subscription => subscription.id !== id);
+      const nextVisibleHistory = visibleSubscriptionPriceHistory.filter(entry => entry.subscriptionId !== id);
+      setSubscriptions(prev => removeById(prev, id));
+      setSubscriptionPriceHistory(prev => prev.filter(entry => entry.subscriptionId !== id));
+      refreshUnlockedBudgetsForSubscriptions(nextVisibleSubscriptions, nextVisibleHistory);
     },
     setSavingArchived:  (id, v) => setSavings(prev   => setArchived(prev, id, v)),
     removeSaving:       id => {

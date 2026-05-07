@@ -25,6 +25,8 @@ import type {
   SavingAmountHistory,
   SavingsAccount,
   SavingsHistory,
+  Subscription,
+  SubscriptionPriceHistory,
 } from '@/lib/types';
 import type { LocalBudget, ResolvedLineItem } from '@/lib/budgetLogic';
 
@@ -41,6 +43,8 @@ export interface PersistedAppData {
   salaryHistory: SalaryHistory[];
   pots: Pot[];
   expenses: Expense[];
+  subscriptions: Subscription[];
+  subscriptionPriceHistory: SubscriptionPriceHistory[];
   savings: Saving[];
   savingAmountHistory: SavingAmountHistory[];
   mortgages: Mortgage[];
@@ -91,6 +95,8 @@ export function emptyPersistedAppData(): PersistedAppData {
     salaryHistory: [],
     pots: [],
     expenses: [],
+    subscriptions: [],
+    subscriptionPriceHistory: [],
     savings: [],
     savingAmountHistory: [],
     mortgages: [],
@@ -124,6 +130,8 @@ export function normalizePersistedAppData(value: unknown): PersistedAppData {
     salaryHistory: readArray<SalaryHistory>(raw.salaryHistory),
     pots: readArray<Pot>(raw.pots),
     expenses: readArray<Expense>(raw.expenses),
+    subscriptions: readArray<Subscription>(raw.subscriptions),
+    subscriptionPriceHistory: readArray<SubscriptionPriceHistory>(raw.subscriptionPriceHistory),
     savings: readArray<Saving>(raw.savings),
     savingAmountHistory: readArray<SavingAmountHistory>(raw.savingAmountHistory),
     mortgages: readArray<Mortgage>(raw.mortgages),
@@ -225,6 +233,7 @@ function mergeLinkedRecords<T extends { id: string }, P extends string>(
   currentParentIds: Set<P>,
 ): T[] {
   const preserved = current.filter(record => !currentParentIds.has((record as Record<string, unknown>).incomeSourceId as P)
+    && !currentParentIds.has((record as Record<string, unknown>).subscriptionId as P)
     && !currentParentIds.has((record as Record<string, unknown>).savingId as P)
     && !currentParentIds.has((record as Record<string, unknown>).mortgageId as P)
     && !currentParentIds.has((record as Record<string, unknown>).savingsAccountId as P)
@@ -291,6 +300,8 @@ export function filterPersistedAppDataForUser(
   const pots = filterOwnedRecords(data.pots, accessibleUserIds);
   const potIds = new Set(pots.map(pot => pot.id as string));
   const expenses = filterOwnedRecords(data.expenses, accessibleUserIds).filter(expense => potIds.has(expense.potId as string));
+  const subscriptions = filterOwnedRecords(data.subscriptions, accessibleUserIds).filter(subscription => potIds.has(subscription.potId as string));
+  const subscriptionIds = new Set(subscriptions.map(subscription => subscription.id as string));
   const savings = filterOwnedRecords(data.savings, accessibleUserIds).filter(saving => potIds.has(saving.potId as string));
   const visibleSavingIds = new Set(savings.map(saving => saving.id as string));
   const mortgages = filterOwnedRecords(data.mortgages, accessibleUserIds);
@@ -317,6 +328,8 @@ export function filterPersistedAppDataForUser(
     salaryHistory: data.salaryHistory.filter(entry => sourceIds.has(entry.incomeSourceId as string)),
     pots,
     expenses,
+    subscriptions,
+    subscriptionPriceHistory: data.subscriptionPriceHistory.filter(entry => subscriptionIds.has(entry.subscriptionId as string)),
     savings,
     savingAmountHistory: data.savingAmountHistory.filter(entry => visibleSavingIds.has(entry.savingId as string)),
     mortgages,
@@ -343,6 +356,7 @@ export function savePersistedAppDataForUser(
   const current = getPersistedAppData();
 
   const visibleSourceIds = new Set(nextVisibleData.sources.map(source => source.id as string));
+  const visibleSubscriptionIds = new Set(nextVisibleData.subscriptions.map(subscription => subscription.id as string));
   const visibleSavingIds = new Set(nextVisibleData.savings.map(saving => saving.id as string));
   const visibleMortgageIds = new Set(nextVisibleData.mortgages.map(mortgage => mortgage.id as string));
   const visibleSavingsAccountIds = new Set(nextVisibleData.savingsAccounts.map(account => account.id as string));
@@ -357,6 +371,8 @@ export function savePersistedAppDataForUser(
     salaryHistory: mergeLinkedRecords(current.salaryHistory, nextVisibleData.salaryHistory, visibleSourceIds),
     pots: mergeOwnedRecords(current.pots, nextVisibleData.pots, accessibleUserIds),
     expenses: mergeOwnedRecords(current.expenses, nextVisibleData.expenses, accessibleUserIds),
+    subscriptions: mergeOwnedRecords(current.subscriptions, nextVisibleData.subscriptions, accessibleUserIds),
+    subscriptionPriceHistory: mergeLinkedRecords(current.subscriptionPriceHistory, nextVisibleData.subscriptionPriceHistory, visibleSubscriptionIds),
     savings: mergeOwnedRecords(current.savings, nextVisibleData.savings, accessibleUserIds),
     savingAmountHistory: mergeLinkedRecords(current.savingAmountHistory, nextVisibleData.savingAmountHistory, visibleSavingIds),
     mortgages: mergeOwnedRecords(current.mortgages, nextVisibleData.mortgages, accessibleUserIds),

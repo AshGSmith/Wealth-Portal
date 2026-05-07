@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { AlertTriangle, ArrowRight, ChevronLeft, ChevronRight } from 'lucide-react';
 import PageHeader from '@/components/layout/PageHeader';
@@ -9,7 +9,9 @@ import ExpensesSavingsPieCard from '@/components/ui/ExpensesSavingsPieCard';
 import InvestmentValueTrendCard from '@/components/ui/InvestmentValueTrendCard';
 import NetWorthTile from '@/components/ui/NetWorthTile';
 import SavingsProgressCard from '@/components/ui/SavingsProgressCard';
+import SubscriptionsByCategoryPieCard, { subscriptionCategoryColor } from '@/components/ui/SubscriptionsByCategoryPieCard';
 import Tile from '@/components/ui/Tile';
+import { resolveSubscriptionForMonth, subscriptionPriceForMonth } from '@/lib/budgetLogic';
 import { combinedInvestmentValueTrend, dramaticInvestmentDrops, useInvestmentMarketQuotes } from '@/lib/investmentCalc';
 import {
   calcBudget,
@@ -20,7 +22,7 @@ import {
 import { fmtCurrency, fmtMonth } from '@/lib/format';
 import { useStore } from '@/lib/store';
 import { isMortgageCurrentAsOf, mortgageLiability, mortgagesWithFixedTermEndingSoon, totalPropertyValue } from '@/lib/wealthCalc';
-import type { Debt, DebtHistory, Mortgage, MortgagePayment, Pension, PensionHistory, SavingsAccount, SavingsHistory } from '@/lib/types';
+import type { Debt, DebtHistory, Mortgage, MortgagePayment, Pension, PensionHistory, SavingsAccount, SavingsHistory, SubscriptionCategory } from '@/lib/types';
 
 type AlertItem = {
   title: string;
@@ -116,10 +118,17 @@ function mortgageLiabilitiesForMonth(
     }, 0);
 }
 
+function subscriptionAmountForBudgetMonth(cost: number, schedule: string): number {
+  if (schedule === 'Weekly') return (cost * 52) / 12;
+  return cost;
+}
+
 export default function DashboardPage() {
   const store = useStore();
   const investmentMarketQuotes = useInvestmentMarketQuotes(store.investments, store.investmentPurchases);
   const [selectedMonth, setSelectedMonth] = useState(currentYearMonth());
+  const [usdToGbpRate, setUsdToGbpRate] = useState<number | null>(null);
+  const [subscriptionFxUnavailable, setSubscriptionFxUnavailable] = useState(false);
   const INVESTMENT_DROP_ALERT_THRESHOLD = 0.15;
   const mortgageAlerts = mortgagesWithFixedTermEndingSoon(store.mortgages, currentIsoDate(), 60);
   const investmentDropAlerts = dramaticInvestmentDrops(
@@ -136,6 +145,66 @@ export default function DashboardPage() {
     investmentMarketQuotes,
     currentIsoDate(),
   );
+  const monthlySubscriptionRows = useMemo(() => store.subscriptions
+    .flatMap(subscription => {
+      const resolved = resolveSubscriptionForMonth(subscription, store.subscriptionPriceHistory, selectedMonth);
+      if (!resolved) return [];
+
+      const price = subscriptionPriceForMonth(subscription, store.subscriptionPriceHistory, selectedMonth);
+      return [{
+        category: subscription.category,
+        currency: price.currency,
+        amount: subscriptionAmountForBudgetMonth(price.cost, subscription.paymentSchedule),
+      }];
+    }), [selectedMonth, store.subscriptionPriceHistory, store.subscriptions]);
+  const hasUsdSubscriptionRows = monthlySubscriptionRows.some(row => row.currency === 'USD');
+
+  useEffect(() => {
+    if (!hasUsdSubscriptionRows) return;
+
+    let cancelled = false;
+
+    async function loadUsdToGbpRate() {
+      try {
+        const response = await fetch('/api/exchange-rates/usd-gbp', { cache: 'no-store' });
+        const data = await response.json() as { rateToGbp?: number };
+        if (!response.ok || !Number.isFinite(data.rateToGbp)) throw new Error('Exchange rate unavailable.');
+        if (!cancelled) {
+          setUsdToGbpRate(data.rateToGbp ?? null);
+          setSubscriptionFxUnavailable(false);
+        }
+      } catch {
+        if (!cancelled) {
+          setUsdToGbpRate(null);
+          setSubscriptionFxUnavailable(true);
+        }
+      }
+    }
+
+    void loadUsdToGbpRate();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [hasUsdSubscriptionRows]);
+
+  const subscriptionsByCategory = useMemo(() => {
+    const totals = new Map<SubscriptionCategory, number>();
+
+    for (const row of monthlySubscriptionRows) {
+      if (row.currency === 'USD' && usdToGbpRate === null) continue;
+      const amountGbp = row.currency === 'USD' ? row.amount * (usdToGbpRate ?? 0) : row.amount;
+      totals.set(row.category, (totals.get(row.category) ?? 0) + amountGbp);
+    }
+
+    return [...totals.entries()]
+      .map(([category, value]) => ({
+        label: category,
+        value,
+        color: subscriptionCategoryColor(category),
+      }))
+      .sort((a, b) => b.value - a.value);
+  }, [monthlySubscriptionRows, usdToGbpRate]);
   const activeBudget = findBudgetForMonth(store.budgets, selectedMonth);
   const activePots = store.pots.filter(p => !p.archived);
   const budgetCalc = activeBudget
@@ -376,6 +445,14 @@ export default function DashboardPage() {
                 footer={`${savingsAccountsWithTargets.length} account${savingsAccountsWithTargets.length === 1 ? '' : 's'} with savings targets.`}
               />
             )}
+            <SubscriptionsByCategoryPieCard
+              slices={subscriptionsByCategory}
+              footer={
+                hasUsdSubscriptionRows && subscriptionFxUnavailable
+                  ? `Active subscriptions for ${fmtMonth(selectedMonth)}. USD prices excluded: FX unavailable.`
+                  : `Active subscriptions for ${fmtMonth(selectedMonth)}.`
+              }
+            />
           </div>
         </section>
       </div>

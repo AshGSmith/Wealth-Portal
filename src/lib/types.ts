@@ -7,6 +7,8 @@ type Brand<T, B extends string> = T & { readonly __brand: B };
 
 export type BudgetId           = Brand<string, 'BudgetId'>;
 export type ExpenseId          = Brand<string, 'ExpenseId'>;
+export type SubscriptionId     = Brand<string, 'SubscriptionId'>;
+export type SubscriptionPriceHistoryId = Brand<string, 'SubscriptionPriceHistoryId'>;
 export type SavingId           = Brand<string, 'SavingId'>;
 export type SavingAmountHistoryId = Brand<string, 'SavingAmountHistoryId'>;
 export type PotId              = Brand<string, 'PotId'>;
@@ -41,6 +43,11 @@ export type DebtType = 'loan' | 'credit-card';
 export type DebtHistoryType = 'snapshot' | 'purchase' | 'payment';
 export type DebtTransactionType = 'purchase' | 'payment';
 export type InvestmentPerShareCurrency = 'GBP' | 'USD';
+export type SubscriptionCurrency = 'GBP' | 'USD';
+export type SubscriptionPaymentSchedule = 'Weekly' | 'Monthly' | 'Yearly';
+export type SubscriptionCategory = 'Streaming' | 'Storage' | 'Utility' | 'Transport' | 'Finance' | 'Health' | 'Business' | 'Other';
+export type SubscriptionStatus = 'Current' | 'Cancelled';
+export type SubscriptionPaymentMethod = 'Direct Debit' | 'Card';
 
 export type { IncomeSourceType } from './constants';
 
@@ -132,6 +139,33 @@ export interface Expense extends LineItem {
   id: ExpenseId;
   oneOffPayment: boolean;
   oneOffAppliedBudgetMonth: YearMonth | null;
+}
+
+export interface Subscription extends OwnedRecord {
+  id: SubscriptionId;
+  name: string;
+  cost: number;
+  currency: SubscriptionCurrency;
+  paymentDate: ISODate;
+  paymentSchedule: SubscriptionPaymentSchedule;
+  freeTrial: boolean;
+  freeTrialExpiryDate: ISODate | null;
+  category: SubscriptionCategory;
+  status: SubscriptionStatus;
+  endDate: ISODate | null;
+  paymentMethod: SubscriptionPaymentMethod;
+  potId: PotId;
+  incomeSourceId: IncomeSourceId;
+  isCriticalExpense: boolean;
+  archived: boolean;
+}
+
+export interface SubscriptionPriceHistory {
+  id: SubscriptionPriceHistoryId;
+  subscriptionId: SubscriptionId;
+  cost: number;
+  currency: SubscriptionCurrency;
+  effectiveDate: ISODate;
 }
 
 /**

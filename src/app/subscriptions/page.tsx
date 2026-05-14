@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { Archive, ChevronDown, ChevronRight, Pencil, Plus, RotateCcw, Trash2 } from 'lucide-react';
+import { AlertTriangle, Archive, ChevronDown, ChevronRight, Pencil, Plus, RotateCcw, Trash2 } from 'lucide-react';
 import PageHeader from '@/components/layout/PageHeader';
 import SubscriptionForm from '@/components/subscriptions/SubscriptionForm';
 import SubscriptionPriceHistoryForm from '@/components/subscriptions/SubscriptionPriceHistoryForm';
@@ -10,18 +10,19 @@ import Tile from '@/components/ui/Tile';
 import { subscriptionPriceForMonth } from '@/lib/budgetLogic';
 import { fmtCurrency } from '@/lib/format';
 import { useStore } from '@/lib/store';
+import {
+  currenciesRequiringFx,
+  exchangeRatePath,
+  formatSubscriptionCurrency,
+  subscriptionAmountToGbp,
+  type SubscriptionFxRates,
+} from '@/lib/subscriptionCurrency';
+import { currentIsoDate, subscriptionLifecycleAlerts, type SubscriptionLifecycleAlert } from '@/lib/subscriptionCalc';
 import type { AccessibleUser } from '@/lib/auth/types';
-import type { ISODate, Subscription, SubscriptionPriceHistory } from '@/lib/types';
+import type { ISODate, Subscription, SubscriptionCurrency, SubscriptionPriceHistory } from '@/lib/types';
 
 function currentMonth(): string {
   return new Date().toISOString().slice(0, 7);
-}
-
-function fmtMoney(value: number, currency: string): string {
-  return new Intl.NumberFormat(currency === 'USD' ? 'en-US' : 'en-GB', {
-    style: 'currency',
-    currency,
-  }).format(value);
 }
 
 function monthlyCostForSchedule(cost: number, schedule: Subscription['paymentSchedule']): number {
@@ -42,6 +43,42 @@ function fmtDate(value: string): string {
     month: 'short',
     year: 'numeric',
   });
+}
+
+function subscriptionAlertText(alert: SubscriptionLifecycleAlert): string {
+  const verb = alert.kind === 'contract' ? 'Contract ends' : 'Renews';
+  const suffix = alert.daysUntil === 0
+    ? 'today'
+    : `in ${alert.daysUntil} day${alert.daysUntil === 1 ? '' : 's'}`;
+  return `${verb} ${suffix} · ${fmtDate(alert.date)}`;
+}
+
+function SubscriptionPriceValue({
+  amount,
+  currency,
+  fxRates,
+  align = 'right',
+}: {
+  amount: number;
+  currency: SubscriptionCurrency;
+  fxRates: SubscriptionFxRates;
+  align?: 'left' | 'right';
+}) {
+  const amountGbp = subscriptionAmountToGbp(amount, currency, fxRates);
+  const isConverted = currency !== 'GBP';
+
+  return (
+    <div className={align === 'right' ? 'text-right' : 'text-left'}>
+      <div className="text-sm font-bold tabular-nums" style={{ color: amountGbp === null ? '#f43f5e' : 'var(--foreground)' }}>
+        {amountGbp !== null ? fmtCurrency(amountGbp) : 'FX unavailable'}
+      </div>
+      {isConverted && (
+        <div className="text-[10px] tabular-nums" style={{ color: 'var(--muted)' }}>
+          ({formatSubscriptionCurrency(amount, currency)})
+        </div>
+      )}
+    </div>
+  );
 }
 
 function ownershipSummary(ownerUserIds: string[], accessibleUsers: AccessibleUser[]) {
@@ -67,54 +104,72 @@ export default function SubscriptionsPage() {
 
   const activePots = store.pots.filter(pot => !pot.archived);
   const activeSources = store.sources.filter(source => !source.archived);
-  const active = store.subscriptions.filter(subscription => !subscription.archived);
-  const archived = store.subscriptions.filter(subscription => subscription.archived);
-  const [usdToGbpRate, setUsdToGbpRate] = useState<number | null>(null);
-  const [fxUnavailable, setFxUnavailable] = useState(false);
+  const sortByCriticalThenName = (a: Subscription, b: Subscription) =>
+    Number(b.isCriticalExpense) - Number(a.isCriticalExpense) || a.name.localeCompare(b.name);
+  const active = store.subscriptions.filter(subscription => !subscription.archived).sort(sortByCriticalThenName);
+  const archived = store.subscriptions.filter(subscription => subscription.archived).sort(sortByCriticalThenName);
+  const lifecycleAlerts = subscriptionLifecycleAlerts(store.subscriptions, currentIsoDate());
+  const [fxRates, setFxRates] = useState<SubscriptionFxRates>({});
+  const [fxUnavailableCurrencies, setFxUnavailableCurrencies] = useState<Array<Exclude<SubscriptionCurrency, 'GBP'>>>([]);
 
   const activePrices = useMemo(() => active.map(subscription => ({
     subscription,
     price: subscriptionPriceForMonth(subscription, store.subscriptionPriceHistory, currentMonth()),
   })), [active, store.subscriptionPriceHistory]);
 
-  const hasUsdPrices = activePrices.some(item => item.price.currency === 'USD');
+  const fxCurrencies = useMemo(
+    () => currenciesRequiringFx(activePrices.map(item => item.price.currency)),
+    [activePrices],
+  );
+  const fxCurrencyKey = fxCurrencies.join('|');
 
   useEffect(() => {
-    if (!hasUsdPrices) {
-      setUsdToGbpRate(null);
-      setFxUnavailable(false);
+    const currencies = fxCurrencyKey
+      .split('|')
+      .filter(Boolean) as Array<Exclude<SubscriptionCurrency, 'GBP'>>;
+
+    if (currencies.length === 0) {
+      setFxRates({});
+      setFxUnavailableCurrencies([]);
       return;
     }
 
     let cancelled = false;
 
-    async function loadUsdToGbpRate() {
-      setFxUnavailable(false);
-      try {
-        const response = await fetch('/api/exchange-rates/usd-gbp', { cache: 'no-store' });
-        const data = await response.json() as { rateToGbp?: number };
-        if (!response.ok || !Number.isFinite(data.rateToGbp)) throw new Error('Exchange rate unavailable.');
-        if (!cancelled) setUsdToGbpRate(data.rateToGbp ?? null);
-      } catch {
-        if (!cancelled) {
-          setUsdToGbpRate(null);
-          setFxUnavailable(true);
+    async function loadFxRates() {
+      const results = await Promise.all(currencies.map(async currency => {
+        try {
+          const response = await fetch(exchangeRatePath(currency), { cache: 'no-store' });
+          const data = await response.json() as { rateToGbp?: number };
+          if (!response.ok || !Number.isFinite(data.rateToGbp)) throw new Error('Exchange rate unavailable.');
+          return { currency, rate: data.rateToGbp ?? null };
+        } catch {
+          return { currency, rate: null };
         }
-      }
+      }));
+
+      if (cancelled) return;
+
+      setFxRates(Object.fromEntries(
+        results
+          .filter(result => result.rate !== null)
+          .map(result => [result.currency, result.rate]),
+      ) as SubscriptionFxRates);
+      setFxUnavailableCurrencies(results
+        .filter(result => result.rate === null)
+        .map(result => result.currency));
     }
 
-    void loadUsdToGbpRate();
+    void loadFxRates();
 
     return () => {
       cancelled = true;
     };
-  }, [hasUsdPrices]);
+  }, [fxCurrencyKey]);
 
   const subscriptionSummary = useMemo(() => {
     function toGbp(amount: number, currency: string): number {
-      if (currency === 'GBP') return amount;
-      if (currency === 'USD' && usdToGbpRate !== null) return amount * usdToGbpRate;
-      return 0;
+      return subscriptionAmountToGbp(amount, currency as SubscriptionCurrency, fxRates) ?? 0;
     }
 
     return activePrices.reduce(
@@ -124,12 +179,12 @@ export default function SubscriptionsPage() {
       }),
       { monthlyCost: 0, annualCost: 0 },
     );
-  }, [activePrices, usdToGbpRate]);
+  }, [activePrices, fxRates]);
 
-  const summarySubtitle = fxUnavailable
-    ? 'USD prices excluded: FX unavailable'
-    : hasUsdPrices && usdToGbpRate === null
-      ? 'Converting USD prices'
+  const summarySubtitle = fxUnavailableCurrencies.length > 0
+    ? `${fxUnavailableCurrencies.join('/')} prices excluded: FX unavailable`
+    : fxCurrencies.some(currency => fxRates[currency] === undefined)
+      ? `Converting ${fxCurrencies.join('/')} prices`
       : `${active.length} active subscription${active.length === 1 ? '' : 's'}`;
 
   function openCreate() {
@@ -148,6 +203,7 @@ export default function SubscriptionsPage() {
       status: 'Current',
       archived: false,
       paymentDate: startDate,
+      paymentDay: Number(startDate.slice(8, 10)) || subscription.paymentDay,
       endDate: null,
     });
   }
@@ -175,6 +231,30 @@ export default function SubscriptionsPage() {
   return (
     <>
       <PageHeader title="Subscriptions" subtitle={`${active.length} active`} actions={actions} />
+
+      {lifecycleAlerts.length > 0 && (
+        <div className="mb-4 space-y-2">
+          {lifecycleAlerts.map(alert => (
+            <button
+              key={`${alert.subscriptionId}-${alert.kind}-${alert.date}`}
+              onClick={() => {
+                const subscription = store.subscriptions.find(item => item.id === alert.subscriptionId);
+                if (subscription) openEdit(subscription);
+              }}
+              className="flex w-full items-start gap-2.5 rounded-xl border px-3 py-2.5 text-left transition-colors"
+              style={{ background: '#2563eb14', borderColor: '#2563eb55' }}
+              onMouseEnter={event => (event.currentTarget.style.background = '#2563eb22')}
+              onMouseLeave={event => (event.currentTarget.style.background = '#2563eb14')}
+            >
+              <AlertTriangle size={15} className="mt-0.5 shrink-0" style={{ color: '#60a5fa' }} />
+              <div className="min-w-0">
+                <p className="text-sm font-semibold" style={{ color: 'var(--foreground)' }}>{alert.subscriptionName}</p>
+                <p className="mt-0.5 text-xs" style={{ color: '#60a5fa' }}>{subscriptionAlertText(alert)}</p>
+              </div>
+            </button>
+          ))}
+        </div>
+      )}
 
       <div className="mb-4 grid grid-cols-2 gap-2">
         <Tile
@@ -225,6 +305,7 @@ export default function SubscriptionsPage() {
               onLogPriceChange={() => setPriceChangeSubscription(subscription)}
               onRemovePriceHistory={id => store.removeSubscriptionPriceHistory(id)}
               onArchive={() => store.setSubscriptionArchived(subscription.id, true)}
+              fxRates={fxRates}
             />
           ))}
         </div>
@@ -255,6 +336,7 @@ export default function SubscriptionsPage() {
                   onLogPriceChange={() => setPriceChangeSubscription(subscription)}
                   onRemovePriceHistory={id => store.removeSubscriptionPriceHistory(id)}
                   onResubscribe={() => setResubscribeSubscription(subscription)}
+                  fxRates={fxRates}
                   onDelete={() => {
                     if (window.confirm(`Delete archived subscription "${subscription.name}" permanently?`)) {
                       store.removeSubscription(subscription.id);
@@ -313,6 +395,7 @@ interface RowProps {
   onArchive?: () => void;
   onResubscribe?: () => void;
   onDelete?: () => void;
+  fxRates: SubscriptionFxRates;
   isArchived?: boolean;
 }
 
@@ -328,6 +411,7 @@ function SubscriptionRow({
   onArchive,
   onResubscribe,
   onDelete,
+  fxRates,
   isArchived,
 }: RowProps) {
   const [expanded, setExpanded] = useState(false);
@@ -385,11 +469,21 @@ function SubscriptionRow({
                 {subscription.category} · {subscription.paymentSchedule} · {subscription.paymentMethod}
               </p>
               <p className="mt-0.5 text-xs" style={{ color: 'var(--muted)' }}>
-                {potName} · {sourceName} · Next payment {fmtDate(subscription.paymentDate)}
+                {potName} · {sourceName} · Started {fmtDate(subscription.paymentDate)} · Pay day {subscription.paymentDay}
               </p>
               {subscription.freeTrial && subscription.freeTrialExpiryDate && (
                 <p className="mt-0.5 text-xs" style={{ color: '#60a5fa' }}>
                   Free trial ends {fmtDate(subscription.freeTrialExpiryDate)}
+                </p>
+              )}
+              {subscription.contractEndDate && (
+                <p className="mt-0.5 text-xs" style={{ color: '#60a5fa' }}>
+                  Contract ends {fmtDate(subscription.contractEndDate)}
+                </p>
+              )}
+              {subscription.autoRenew && subscription.renewalDate && (
+                <p className="mt-0.5 text-xs" style={{ color: '#60a5fa' }}>
+                  Renews {fmtDate(subscription.renewalDate)}
                 </p>
               )}
               {subscription.status === 'Cancelled' && subscription.endDate && (
@@ -403,9 +497,7 @@ function SubscriptionRow({
 
         <div className="flex shrink-0 items-start gap-2">
           <div className="pt-1 text-right">
-            <p className="text-sm font-bold tabular-nums" style={{ color: 'var(--foreground)' }}>
-              {fmtMoney(currentPrice.cost, currentPrice.currency)}
-            </p>
+            <SubscriptionPriceValue amount={currentPrice.cost} currency={currentPrice.currency} fxRates={fxRates} />
             {history.length > 0 && (
               <p className="text-[10px]" style={{ color: 'var(--muted)' }}>
                 current
@@ -480,9 +572,9 @@ function SubscriptionRow({
           <div className="space-y-1.5">
             <div className="flex items-center justify-between gap-3 rounded-lg px-3 py-2 text-xs" style={{ background: 'var(--surface-hover)' }}>
               <span style={{ color: 'var(--muted)' }}>Base price</span>
-              <span className="font-semibold tabular-nums" style={{ color: 'var(--foreground)' }}>
-                {fmtMoney(subscription.cost, subscription.currency)}
-              </span>
+              <div className="font-semibold tabular-nums" style={{ color: 'var(--foreground)' }}>
+                <SubscriptionPriceValue amount={subscription.cost} currency={subscription.currency} fxRates={fxRates} />
+              </div>
             </div>
             {history.length === 0 ? (
               <p className="px-1 py-2 text-xs" style={{ color: 'var(--muted)' }}>
@@ -493,9 +585,7 @@ function SubscriptionRow({
                 <div key={entry.id} className="flex items-center justify-between gap-3 rounded-lg px-3 py-2 text-xs" style={{ background: 'var(--surface-hover)' }}>
                   <span style={{ color: 'var(--muted)' }}>{fmtDate(entry.effectiveDate)}</span>
                   <div className="flex items-center gap-2">
-                    <span className="font-semibold tabular-nums" style={{ color: 'var(--foreground)' }}>
-                      {fmtMoney(entry.cost, entry.currency)}
-                    </span>
+                    <SubscriptionPriceValue amount={entry.cost} currency={entry.currency} fxRates={fxRates} />
                     <button
                       onClick={() => onRemovePriceHistory(entry.id)}
                       className="rounded p-1"

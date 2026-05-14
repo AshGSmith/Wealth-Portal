@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import Sheet from '@/components/ui/Sheet';
+import { SUBSCRIPTION_CURRENCIES } from '@/lib/subscriptionCurrency';
 import type {
   ISODate,
   Subscription,
@@ -9,8 +10,6 @@ import type {
   SubscriptionPriceHistory,
   SubscriptionPriceHistoryId,
 } from '@/lib/types';
-
-const CURRENCIES: SubscriptionCurrency[] = ['GBP', 'USD'];
 
 interface Props {
   subscription: Subscription | null;
@@ -119,7 +118,7 @@ export default function SubscriptionPriceHistoryForm({ subscription, open, onClo
             Currency
           </label>
           <select value={form.currency} onChange={event => set('currency', event.target.value as SubscriptionCurrency)} className={inputCls} style={inputStyle}>
-            {CURRENCIES.map(currency => <option key={currency} value={currency}>{currency}</option>)}
+            {SUBSCRIPTION_CURRENCIES.map(currency => <option key={currency} value={currency}>{currency}</option>)}
           </select>
         </div>
 

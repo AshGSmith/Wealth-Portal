@@ -23,6 +23,8 @@ export default function MortgagesPage() {
 
   const active   = store.mortgages.filter(m => !m.archived);
   const archived = store.mortgages.filter(m =>  m.archived);
+  const activePots = store.pots.filter(pot => !pot.archived);
+  const activeSources = store.sources.filter(source => !source.archived);
 
   function openCreate() { setEditing(null); setShowForm(true); }
   function openEdit(m: Mortgage) { setEditing(m); setShowForm(true); }
@@ -113,6 +115,8 @@ export default function MortgagesPage() {
       <MortgageForm
         key={`${editing?.id ?? 'new'}-${showForm ? 'open' : 'closed'}`}
         mortgage={editing}
+        pots={activePots}
+        sources={activeSources}
         ownerOptions={store.accessibleUsers}
         currentUserId={store.currentUserId}
         open={showForm}

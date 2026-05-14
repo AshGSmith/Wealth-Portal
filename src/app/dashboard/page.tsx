@@ -21,8 +21,15 @@ import {
 } from '@/lib/budgetCalc';
 import { fmtCurrency, fmtMonth } from '@/lib/format';
 import { useStore } from '@/lib/store';
-import { isMortgageCurrentAsOf, mortgageLiability, mortgagesWithFixedTermEndingSoon, totalPropertyValue } from '@/lib/wealthCalc';
-import type { Debt, DebtHistory, Mortgage, MortgagePayment, Pension, PensionHistory, SavingsAccount, SavingsHistory, SubscriptionCategory } from '@/lib/types';
+import {
+  currenciesRequiringFx,
+  exchangeRatePath,
+  subscriptionAmountToGbp,
+  type SubscriptionFxRates,
+} from '@/lib/subscriptionCurrency';
+import { subscriptionLifecycleAlerts } from '@/lib/subscriptionCalc';
+import { calcWealthForMonth, mortgagesWithFixedTermEndingSoon } from '@/lib/wealthCalc';
+import type { SubscriptionCategory, SubscriptionCurrency } from '@/lib/types';
 
 type AlertItem = {
   title: string;
@@ -69,55 +76,6 @@ function shiftMonth(month: string, direction: -1 | 1): string {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
 }
 
-function monthEnd(month: string): string {
-  const [yearPart, monthPart] = month.split('-');
-  const year = Number(yearPart);
-  const monthIndex = Number(monthPart) - 1;
-  const date = new Date(year, monthIndex + 1, 0);
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-}
-
-function snapshotBalanceForMonth<T extends { id: string; archived: boolean; currentBalance: number }>(
-  records: T[],
-  history: Array<{ date: string; balance: number } & Record<string, string | number | null | undefined>>,
-  historyKey: string,
-  month: string,
-): number {
-  const isCurrentOrFutureMonth = month >= currentYearMonth();
-
-  return records
-    .filter(record => !record.archived)
-    .reduce((sum, record) => {
-      const latestSnapshot = history
-        .filter(entry => String(entry[historyKey]) === record.id && entry.date.slice(0, 7) <= month)
-        .sort((a, b) => a.date.localeCompare(b.date))
-        .at(-1);
-
-      if (latestSnapshot) {
-        return sum + latestSnapshot.balance;
-      }
-
-      return sum + (isCurrentOrFutureMonth ? record.currentBalance : 0);
-    }, 0);
-}
-
-function mortgageLiabilitiesForMonth(
-  mortgages: Mortgage[],
-  payments: MortgagePayment[],
-  month: string,
-): number {
-  const end = monthEnd(month);
-
-  return mortgages
-    .filter(mortgage => isMortgageCurrentAsOf(mortgage, end))
-    .reduce((sum, mortgage) => {
-      const paymentsToMonth = payments.filter(
-        payment => payment.mortgageId === mortgage.id && payment.date <= end,
-      );
-      return sum + mortgageLiability(mortgage, paymentsToMonth);
-    }, 0);
-}
-
 function subscriptionAmountForBudgetMonth(cost: number, schedule: string): number {
   if (schedule === 'Weekly') return (cost * 52) / 12;
   return cost;
@@ -127,8 +85,8 @@ export default function DashboardPage() {
   const store = useStore();
   const investmentMarketQuotes = useInvestmentMarketQuotes(store.investments, store.investmentPurchases);
   const [selectedMonth, setSelectedMonth] = useState(currentYearMonth());
-  const [usdToGbpRate, setUsdToGbpRate] = useState<number | null>(null);
-  const [subscriptionFxUnavailable, setSubscriptionFxUnavailable] = useState(false);
+  const [subscriptionFxRates, setSubscriptionFxRates] = useState<SubscriptionFxRates>({});
+  const [subscriptionFxUnavailableCurrencies, setSubscriptionFxUnavailableCurrencies] = useState<Array<Exclude<SubscriptionCurrency, 'GBP'>>>([]);
   const INVESTMENT_DROP_ALERT_THRESHOLD = 0.15;
   const mortgageAlerts = mortgagesWithFixedTermEndingSoon(store.mortgages, currentIsoDate(), 60);
   const investmentDropAlerts = dramaticInvestmentDrops(
@@ -157,43 +115,62 @@ export default function DashboardPage() {
         amount: subscriptionAmountForBudgetMonth(price.cost, subscription.paymentSchedule),
       }];
     }), [selectedMonth, store.subscriptionPriceHistory, store.subscriptions]);
-  const hasUsdSubscriptionRows = monthlySubscriptionRows.some(row => row.currency === 'USD');
+  const subscriptionFxCurrencies = useMemo(
+    () => currenciesRequiringFx(monthlySubscriptionRows.map(row => row.currency)),
+    [monthlySubscriptionRows],
+  );
+  const subscriptionFxCurrencyKey = subscriptionFxCurrencies.join('|');
 
   useEffect(() => {
-    if (!hasUsdSubscriptionRows) return;
+    const currencies = subscriptionFxCurrencyKey
+      .split('|')
+      .filter(Boolean) as Array<Exclude<SubscriptionCurrency, 'GBP'>>;
+
+    if (currencies.length === 0) {
+      setSubscriptionFxRates({});
+      setSubscriptionFxUnavailableCurrencies([]);
+      return;
+    }
 
     let cancelled = false;
 
-    async function loadUsdToGbpRate() {
-      try {
-        const response = await fetch('/api/exchange-rates/usd-gbp', { cache: 'no-store' });
-        const data = await response.json() as { rateToGbp?: number };
-        if (!response.ok || !Number.isFinite(data.rateToGbp)) throw new Error('Exchange rate unavailable.');
-        if (!cancelled) {
-          setUsdToGbpRate(data.rateToGbp ?? null);
-          setSubscriptionFxUnavailable(false);
+    async function loadSubscriptionFxRates() {
+      const results = await Promise.all(currencies.map(async currency => {
+        try {
+          const response = await fetch(exchangeRatePath(currency), { cache: 'no-store' });
+          const data = await response.json() as { rateToGbp?: number };
+          if (!response.ok || !Number.isFinite(data.rateToGbp)) throw new Error('Exchange rate unavailable.');
+          return { currency, rate: data.rateToGbp ?? null };
+        } catch {
+          return { currency, rate: null };
         }
-      } catch {
-        if (!cancelled) {
-          setUsdToGbpRate(null);
-          setSubscriptionFxUnavailable(true);
-        }
-      }
+      }));
+
+      if (cancelled) return;
+
+      setSubscriptionFxRates(Object.fromEntries(
+        results
+          .filter(result => result.rate !== null)
+          .map(result => [result.currency, result.rate]),
+      ) as SubscriptionFxRates);
+      setSubscriptionFxUnavailableCurrencies(results
+        .filter(result => result.rate === null)
+        .map(result => result.currency));
     }
 
-    void loadUsdToGbpRate();
+    void loadSubscriptionFxRates();
 
     return () => {
       cancelled = true;
     };
-  }, [hasUsdSubscriptionRows]);
+  }, [subscriptionFxCurrencyKey]);
 
   const subscriptionsByCategory = useMemo(() => {
     const totals = new Map<SubscriptionCategory, number>();
 
     for (const row of monthlySubscriptionRows) {
-      if (row.currency === 'USD' && usdToGbpRate === null) continue;
-      const amountGbp = row.currency === 'USD' ? row.amount * (usdToGbpRate ?? 0) : row.amount;
+      const amountGbp = subscriptionAmountToGbp(row.amount, row.currency, subscriptionFxRates);
+      if (amountGbp === null) continue;
       totals.set(row.category, (totals.get(row.category) ?? 0) + amountGbp);
     }
 
@@ -204,7 +181,7 @@ export default function DashboardPage() {
         color: subscriptionCategoryColor(category),
       }))
       .sort((a, b) => b.value - a.value);
-  }, [monthlySubscriptionRows, usdToGbpRate]);
+  }, [monthlySubscriptionRows, subscriptionFxRates]);
   const activeBudget = findBudgetForMonth(store.budgets, selectedMonth);
   const activePots = store.pots.filter(p => !p.archived);
   const budgetCalc = activeBudget
@@ -224,13 +201,6 @@ export default function DashboardPage() {
     store.sources,
     store.entries,
   );
-  const propertyAssets = totalPropertyValue(store.properties, monthEnd(selectedMonth));
-  const savingsTotal = snapshotBalanceForMonth<SavingsAccount>(
-    store.savingsAccounts,
-    store.savingsHistory as Array<SavingsHistory & Record<string, string | number | null | undefined>>,
-    'savingsAccountId',
-    selectedMonth,
-  );
   const savingsAccountsWithTargets = store.savingsAccounts.filter(
     account => !account.archived && account.targetSavingsAmount !== null && account.targetSavingsAmount > 0,
   );
@@ -242,22 +212,24 @@ export default function DashboardPage() {
     (sum, account) => sum + account.currentBalance,
     0,
   );
-  const debtTotal = snapshotBalanceForMonth<Debt>(
-    store.debts,
-    store.debtHistory as Array<DebtHistory & Record<string, string | number | null | undefined>>,
-    'debtId',
+  const wealthTotals = calcWealthForMonth(
+    {
+      properties: store.properties,
+      mortgages: store.mortgages,
+      mortgagePayments: store.mortgagePayments,
+      savingsAccounts: store.savingsAccounts,
+      savingsHistory: store.savingsHistory,
+      debts: store.debts,
+      debtHistory: store.debtHistory,
+      pensions: store.pensions,
+      pensionHistory: store.pensionHistory,
+      investments: store.investments,
+      investmentPurchases: store.investmentPurchases,
+      investmentValuationHistory: store.investmentValuationHistory,
+    },
     selectedMonth,
+    investmentMarketQuotes,
   );
-  const pensionTotal = snapshotBalanceForMonth<Pension>(
-    store.pensions,
-    store.pensionHistory as Array<PensionHistory & Record<string, string | number | null | undefined>>,
-    'pensionId',
-    selectedMonth,
-  );
-  const mortgageTotal = mortgageLiabilitiesForMonth(store.mortgages, store.mortgagePayments, selectedMonth);
-  const totalAssets = propertyAssets + savingsTotal + pensionTotal;
-  const totalLiabilities = mortgageTotal + debtTotal;
-  const netWorth = totalAssets - totalLiabilities;
 
   const summaryTiles = [
     {
@@ -313,6 +285,16 @@ export default function DashboardPage() {
       body: `${investmentAlert.name} is down ${Math.round(investmentAlert.dropPct * 100)}% (${fmtCurrency(investmentAlert.dropAmount)}) versus its previous comparison value.`,
       href: `/wealth/investments#${investmentAlert.investmentId}`,
       tone: 'warn',
+    });
+  }
+
+  for (const subscriptionAlert of subscriptionLifecycleAlerts(store.subscriptions, currentIsoDate())) {
+    const event = subscriptionAlert.kind === 'contract' ? 'contract ends' : 'renews';
+    alerts.push({
+      title: subscriptionAlert.kind === 'contract' ? 'Subscription contract ending soon' : 'Subscription renewal due soon',
+      body: `${subscriptionAlert.subscriptionName} ${event} on ${formatLongDateWithOrdinal(subscriptionAlert.date)} (${subscriptionAlert.daysUntil} day${subscriptionAlert.daysUntil === 1 ? '' : 's'} left).`,
+      href: '/subscriptions',
+      tone: 'info',
     });
   }
 
@@ -395,7 +377,7 @@ export default function DashboardPage() {
 
         <section className="space-y-2">
           <div className="space-y-2">
-            <NetWorthTile netWorth={netWorth} className="min-h-[98px] sm:min-h-[110px]" />
+            <NetWorthTile netWorth={wealthTotals.netWorth} className="min-h-[98px] sm:min-h-[110px]" />
 
             <div className="grid grid-cols-2 gap-2 xl:grid-cols-4">
             {summaryTiles.map(tile => (
@@ -448,8 +430,8 @@ export default function DashboardPage() {
             <SubscriptionsByCategoryPieCard
               slices={subscriptionsByCategory}
               footer={
-                hasUsdSubscriptionRows && subscriptionFxUnavailable
-                  ? `Active subscriptions for ${fmtMonth(selectedMonth)}. USD prices excluded: FX unavailable.`
+                subscriptionFxUnavailableCurrencies.length > 0
+                  ? `Active subscriptions for ${fmtMonth(selectedMonth)}. ${subscriptionFxUnavailableCurrencies.join('/')} prices excluded: FX unavailable.`
                   : `Active subscriptions for ${fmtMonth(selectedMonth)}.`
               }
             />

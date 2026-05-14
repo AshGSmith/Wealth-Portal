@@ -4,6 +4,7 @@ import { createContext, useContext, useMemo, useState, useEffect, type ReactNode
 import {
   applyPendingOneOffExpensesToBudgetMonth,
   createBudget,
+  mortgagePaymentAmountForMonth,
   refreshBudget,
   resolveExpenseForMonth,
   sanitizeBudgetForOneOffExpenses,
@@ -21,11 +22,13 @@ import type {
   PotId,
   IncomeSourceId,
   InvestmentValuationHistoryId,
+  MortgagePaymentId,
   ISODate,
 } from '@/lib/types';
 import type { AccessibleUser } from '@/lib/auth/types';
 import type { PersistedAppData } from '@/lib/data/server';
 import { isExpenseReimbursementSource } from '@/lib/incomeCalc';
+import { subscriptionCancellationCutoff } from '@/lib/subscriptionCalc';
 import {
   investmentSelectedInstrumentSymbol,
   totalSharesHeldForInvestment,
@@ -327,6 +330,85 @@ function currentIsoDate(): ISODate {
   return new Date().toISOString().slice(0, 10) as ISODate;
 }
 
+function daysInYearMonth(month: string): number {
+  const [yearPart, monthPart] = month.split('-').map(Number);
+  return new Date(yearPart, monthPart, 0).getDate();
+}
+
+function addMonthsToYearMonth(month: string, offset: number): string {
+  const [yearPart, monthPart] = month.split('-').map(Number);
+  const date = new Date(yearPart, monthPart - 1 + offset, 1);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+}
+
+function mortgagePaymentDateForMonth(mortgage: Mortgage, month: string): ISODate {
+  const paymentDay = Math.min(Math.max(mortgage.paymentDay ?? 1, 1), daysInYearMonth(month));
+  return `${month}-${String(paymentDay).padStart(2, '0')}` as ISODate;
+}
+
+function firstMortgagePaymentMonth(mortgage: Mortgage): string | null {
+  if (!mortgage.startDate) return null;
+  const startMonth = mortgage.startDate.slice(0, 7);
+  const startDay = Number(mortgage.startDate.slice(8, 10));
+  const firstPaymentDay = Number(mortgagePaymentDateForMonth(mortgage, startMonth).slice(8, 10));
+  return startDay <= firstPaymentDay ? startMonth : addMonthsToYearMonth(startMonth, 1);
+}
+
+function mortgagePaymentPeriodKey(mortgageId: string, month: string): string {
+  return `${mortgageId}:${month}`;
+}
+
+function autoMortgagePaymentId(mortgageId: string, month: string): MortgagePaymentId {
+  return `auto-mortgage-payment-${mortgageId}-${month}` as unknown as MortgagePaymentId;
+}
+
+function buildDueMortgagePayments(
+  mortgages: Mortgage[],
+  payments: MortgagePayment[],
+  todayIso: ISODate,
+): MortgagePayment[] {
+  const existingPeriods = new Set(
+    payments.map(payment => mortgagePaymentPeriodKey(payment.mortgageId as string, payment.date.slice(0, 7))),
+  );
+  const duePayments: MortgagePayment[] = [];
+
+  for (const mortgage of mortgages) {
+    if (mortgage.archived || !mortgage.startDate || mortgage.monthlyPaymentAmount <= 0) continue;
+
+    const firstPaymentMonth = firstMortgagePaymentMonth(mortgage);
+    if (!firstPaymentMonth) continue;
+
+    const maxPayments = Math.max(mortgage.termMonths || 0, 0);
+    if (maxPayments === 0) continue;
+
+    let month = firstPaymentMonth;
+    for (let paymentIndex = 0; paymentIndex < maxPayments; paymentIndex += 1) {
+      const paymentDate = mortgagePaymentDateForMonth(mortgage, month);
+      if (paymentDate > todayIso) break;
+
+      const periodKey = mortgagePaymentPeriodKey(mortgage.id as string, month);
+      if (!existingPeriods.has(periodKey)) {
+        const firstPaymentAmountMonth = mortgage.startDate.slice(0, 7);
+        const amount = mortgage.proRataFirstPayment && month === firstPaymentMonth
+          ? mortgagePaymentAmountForMonth(mortgage, firstPaymentAmountMonth)
+          : mortgage.monthlyPaymentAmount;
+
+        duePayments.push({
+          id: autoMortgagePaymentId(mortgage.id as string, month),
+          mortgageId: mortgage.id,
+          amount,
+          date: paymentDate,
+        });
+        existingPeriods.add(periodKey);
+      }
+
+      month = addMonthsToYearMonth(month, 1);
+    }
+  }
+
+  return duePayments;
+}
+
 function normalizeOwnerUserIds(ownerUserIds: string[] | null | undefined, fallbackUserId: string | null): string[] {
   const cleaned = [...new Set((ownerUserIds ?? []).filter(Boolean))];
   if (cleaned.length > 0) return cleaned;
@@ -540,18 +622,27 @@ function defaultSubscriptionEndDate(subscription: Subscription): ISODate {
   return addMonthsToIsoDate(paymentDate, subscription.paymentSchedule === 'Yearly' ? 12 : 1);
 }
 
+function paymentDayFromDate(value: string | null | undefined): number {
+  const day = Number((value ?? '').slice(8, 10));
+  return Number.isInteger(day) && day >= 1 && day <= 31 ? day : 1;
+}
+
 function normalizeSubscription(subscription: Subscription, fallbackUserId: string | null): Subscription {
   const status = subscription.status ?? 'Current';
   return {
     ...subscription,
     cost: subscription.cost ?? 0,
     currency: subscription.currency ?? 'GBP',
+    paymentDay: subscription.paymentDay ?? paymentDayFromDate(subscription.paymentDate),
     paymentSchedule: subscription.paymentSchedule ?? 'Monthly',
     freeTrial: subscription.freeTrial ?? false,
     freeTrialExpiryDate: subscription.freeTrial ? subscription.freeTrialExpiryDate ?? null : null,
+    autoRenew: subscription.autoRenew ?? false,
+    contractEndDate: subscription.contractEndDate ?? null,
+    renewalDate: subscription.autoRenew ? subscription.renewalDate ?? null : null,
     category: subscription.category ?? 'Other',
     status,
-    endDate: status === 'Cancelled' ? subscription.endDate ?? defaultSubscriptionEndDate(subscription) : null,
+    endDate: subscription.endDate ?? (status === 'Cancelled' ? defaultSubscriptionEndDate(subscription) : null),
     paymentMethod: subscription.paymentMethod ?? 'Card',
     isCriticalExpense: subscription.isCriticalExpense ?? false,
     ownerUserIds: normalizeOwnerUserIds(subscription.ownerUserIds, fallbackUserId),
@@ -593,11 +684,13 @@ function normalizeBudgets(
   pots: Pot[],
   expenses: Expense[],
   subscriptions: Subscription[],
+  mortgages: Mortgage[],
   savings: Saving[],
   fallbackUserId: string | null,
 ): LocalBudget[] {
   const expenseOwners = new Map(expenses.map(expense => [expense.id as string, expense.ownerUserIds]));
   const subscriptionOwners = new Map(subscriptions.map(subscription => [subscription.id as string, subscription.ownerUserIds]));
+  const mortgageOwners = new Map(mortgages.map(mortgage => [mortgage.id as string, mortgage.ownerUserIds]));
   const savingOwners = new Map(savings.map(saving => [saving.id as string, saving.ownerUserIds]));
   const sourceNames = new Map(sources.map(source => [source.id as string, source.provider]));
   const potNames = new Map(pots.map(pot => [pot.id as string, pot.name]));
@@ -607,7 +700,7 @@ function normalizeBudgets(
       ...budget,
       items: budget.items.map(item => {
         const sourceOwners = item.sourceType === 'expense'
-          ? expenseOwners.get(item.sourceId) ?? subscriptionOwners.get(item.sourceId)
+          ? expenseOwners.get(item.sourceId) ?? subscriptionOwners.get(item.sourceId) ?? mortgageOwners.get(item.sourceId)
           : savingOwners.get(item.sourceId);
         const ownerUserIds = normalizeOwnerUserIds(item.ownerUserIds ?? sourceOwners, fallbackUserId);
         return {
@@ -629,6 +722,12 @@ function normalizeBudgets(
 function normalizeMortgage(mortgage: Mortgage, fallbackUserId: string | null): Mortgage {
   return {
     ...mortgage,
+    monthlyPaymentAmount: mortgage.monthlyPaymentAmount ?? 0,
+    paymentDay: mortgage.paymentDay ?? paymentDayFromDate(mortgage.startDate),
+    proRataFirstPayment: mortgage.proRataFirstPayment ?? false,
+    potId: mortgage.potId ?? ('' as Mortgage['potId']),
+    incomeSourceId: mortgage.incomeSourceId ?? ('' as Mortgage['incomeSourceId']),
+    isCriticalExpense: mortgage.isCriticalExpense ?? true,
     ownerUserIds: normalizeOwnerUserIds(mortgage.ownerUserIds, fallbackUserId),
   };
 }
@@ -875,6 +974,7 @@ function normalizePersistedDataSnapshot(
       normalizedPots,
       migratedIncomeData.expenses,
       normalizeSubscriptions(snapshot.subscriptions, fallbackUserId),
+      snapshot.mortgages.map(mortgage => normalizeMortgage(mortgage, fallbackUserId)),
       migratedIncomeData.savings,
       fallbackUserId,
     ),
@@ -1334,32 +1434,69 @@ export function AppProvider({
     if (!hydrated || !currentUserId) return;
 
     const todayDate = currentIsoDate();
+    const expiredExpenseIds = new Set(
+      visibleExpenses
+        .filter(expense => !expense.archived && expense.endDate !== null && expense.endDate < todayDate)
+        .map(expense => expense.id as string),
+    );
     const expiredIds = new Set(
       visibleSubscriptions
-        .filter(subscription =>
-          !subscription.archived
-          && subscription.status === 'Cancelled'
-          && subscription.endDate !== null
-          && subscription.endDate < todayDate
-        )
+        .filter(subscription => {
+          const cutoff = subscriptionCancellationCutoff(subscription);
+          return !subscription.archived
+            && (
+              (subscription.endDate !== null && subscription.endDate < todayDate)
+              || (subscription.status === 'Cancelled' && cutoff !== null && cutoff < todayDate)
+            );
+        })
         .map(subscription => subscription.id as string),
     );
 
-    if (expiredIds.size === 0) return;
+    if (expiredExpenseIds.size === 0 && expiredIds.size === 0) return;
 
     const timeoutId = window.setTimeout(() => {
+      const nextVisibleExpenses = visibleExpenses.map(expense =>
+        expiredExpenseIds.has(expense.id as string)
+          ? { ...expense, archived: true }
+          : expense
+      );
       const nextVisibleSubscriptions = visibleSubscriptions.map(subscription =>
         expiredIds.has(subscription.id as string)
           ? { ...subscription, archived: true }
           : subscription
       );
 
+      if (expiredExpenseIds.size > 0) {
+        setExpenses(prev => prev.map(expense =>
+          expiredExpenseIds.has(expense.id as string)
+            ? { ...expense, archived: true }
+            : expense
+        ));
+      }
       setSubscriptions(prev => prev.map(subscription =>
         expiredIds.has(subscription.id as string)
           ? { ...subscription, archived: true }
           : subscription
       ));
-      refreshUnlockedBudgetsForSubscriptions(nextVisibleSubscriptions, visibleSubscriptionPriceHistory);
+      setBudgets(prev => prev.map(budget => {
+        if (budget.locked) return budget;
+        return decorateBudgetItemsWithLabels(
+          sanitizeBudgetForOneOffExpenses(
+            refreshBudget(
+              budget,
+              nextVisibleExpenses,
+              visibleSavings,
+              visibleSavingAmountHistory,
+              nextVisibleSubscriptions,
+              visibleSubscriptionPriceHistory,
+              visibleMortgages,
+            ),
+            nextVisibleExpenses,
+          ),
+          visiblePots,
+          visibleSources,
+        );
+      }));
     }, 0);
 
     return () => {
@@ -1368,8 +1505,58 @@ export function AppProvider({
   }, [
     currentUserId,
     hydrated,
+    visibleExpenses,
+    visibleMortgages,
+    visiblePots,
+    visibleSavingAmountHistory,
+    visibleSavings,
+    visibleSources,
     visibleSubscriptionPriceHistory,
     visibleSubscriptions,
+  ]);
+
+  useEffect(() => {
+    if (!hydrated || !currentUserId) return;
+
+    const duePayments = buildDueMortgagePayments(
+      visibleMortgages,
+      visibleMortgagePayments,
+      currentIsoDate(),
+    );
+    if (duePayments.length === 0) return;
+
+    const timeoutId = window.setTimeout(() => {
+      setMortgagePayments(prev => {
+        let changed = false;
+        const next = [...prev];
+        const existingIds = new Set(prev.map(payment => payment.id as string));
+        const existingPeriods = new Set(
+          prev.map(payment => mortgagePaymentPeriodKey(payment.mortgageId as string, payment.date.slice(0, 7))),
+        );
+
+        for (const payment of duePayments) {
+          const paymentId = payment.id as string;
+          const periodKey = mortgagePaymentPeriodKey(payment.mortgageId as string, payment.date.slice(0, 7));
+          if (existingIds.has(paymentId) || existingPeriods.has(periodKey)) continue;
+
+          next.push(payment);
+          existingIds.add(paymentId);
+          existingPeriods.add(periodKey);
+          changed = true;
+        }
+
+        return changed ? next : prev;
+      });
+    }, 0);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [
+    currentUserId,
+    hydrated,
+    visibleMortgagePayments,
+    visibleMortgages,
   ]);
 
   useEffect(() => {
@@ -1501,6 +1688,7 @@ export function AppProvider({
   function refreshUnlockedBudgetsForSubscriptions(
     nextSubscriptions = visibleSubscriptions,
     nextSubscriptionPriceHistory = visibleSubscriptionPriceHistory,
+    nextMortgages = visibleMortgages,
   ): void {
     setBudgets(prev => prev.map(budget => {
       if (budget.locked) return budget;
@@ -1513,6 +1701,7 @@ export function AppProvider({
             visibleSavingAmountHistory,
             nextSubscriptions,
             nextSubscriptionPriceHistory,
+            nextMortgages,
           ),
           visibleExpenses,
         ),
@@ -1570,7 +1759,7 @@ export function AppProvider({
       setBudgets(prev => {
         const budget = decorateBudgetItemsWithLabels(
           sanitizeBudgetForOneOffExpenses(
-            createBudget(month, visibleNextExpenses, visibleSavings, visibleSavingAmountHistory, visibleSubscriptions, visibleSubscriptionPriceHistory),
+            createBudget(month, visibleNextExpenses, visibleSavings, visibleSavingAmountHistory, visibleSubscriptions, visibleSubscriptionPriceHistory, visibleMortgages),
             visibleNextExpenses,
           ),
           visiblePots,
@@ -1597,7 +1786,7 @@ export function AppProvider({
         if (budget.locked) return budget;
         return decorateBudgetItemsWithLabels(
           sanitizeBudgetForOneOffExpenses(
-            refreshBudget(budget, visibleNextExpenses, visibleSavings, visibleSavingAmountHistory, visibleSubscriptions, visibleSubscriptionPriceHistory),
+            refreshBudget(budget, visibleNextExpenses, visibleSavings, visibleSavingAmountHistory, visibleSubscriptions, visibleSubscriptionPriceHistory, visibleMortgages),
             visibleNextExpenses,
           ),
           visiblePots,
@@ -1787,7 +1976,12 @@ export function AppProvider({
     investmentPurchases: visibleInvestmentPurchases,
     investmentValuationHistory: visibleInvestmentValuationHistory,
 
-    upsertMortgage:        m => setMortgages(prev        => upsert(prev, normalizeMortgage(m, currentUserId))),
+    upsertMortgage:        m => {
+      const normalized = normalizeMortgage(m, currentUserId);
+      const nextVisibleMortgages = upsert(visibleMortgages, normalized);
+      setMortgages(prev => upsert(prev, normalized));
+      refreshUnlockedBudgetsForSubscriptions(visibleSubscriptions, visibleSubscriptionPriceHistory, nextVisibleMortgages);
+    },
     upsertMortgagePayment: p => setMortgagePayments(prev => upsert(prev, p)),
     removeMortgagePayment: id => setMortgagePayments(prev => prev.filter(p => p.id !== id)),
     upsertProperty:        p => setProperties(prev       => upsert(prev, normalizeProperty(p, currentUserId))),
@@ -1852,11 +2046,17 @@ export function AppProvider({
     upsertInvestmentValuationHistory: valuation => setInvestmentValuationHistory(prev => upsert(prev, normalizeInvestmentValuationHistoryEntry(valuation))),
     removeInvestmentValuationHistory: id => setInvestmentValuationHistory(prev => prev.filter(entry => entry.id !== id)),
 
-    setMortgageArchived:       (id, v) => setMortgages(prev       => setArchived(prev, id, v)),
+    setMortgageArchived:       (id, v) => {
+      const nextVisibleMortgages = setArchived(visibleMortgages, id, v);
+      setMortgages(prev => setArchived(prev, id, v));
+      refreshUnlockedBudgetsForSubscriptions(visibleSubscriptions, visibleSubscriptionPriceHistory, nextVisibleMortgages);
+    },
     removeMortgage:            id => {
+      const nextVisibleMortgages = visibleMortgages.filter(mortgage => mortgage.id !== id);
       setMortgages(prev => removeById(prev, id));
       setMortgagePayments(prev => prev.filter(payment => payment.mortgageId !== id));
       setProperties(prev => prev.map(property => property.mortgageId === id ? { ...property, mortgageId: null } : property));
+      refreshUnlockedBudgetsForSubscriptions(visibleSubscriptions, visibleSubscriptionPriceHistory, nextVisibleMortgages);
     },
     setPropertyArchived:       (id, v) => setProperties(prev      => setArchived(prev, id, v)),
     setSavingsAccountArchived: (id, v) => setSavingsAccounts(prev => setArchived(prev, id, v)),

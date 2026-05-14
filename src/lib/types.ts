@@ -43,7 +43,7 @@ export type DebtType = 'loan' | 'credit-card';
 export type DebtHistoryType = 'snapshot' | 'purchase' | 'payment';
 export type DebtTransactionType = 'purchase' | 'payment';
 export type InvestmentPerShareCurrency = 'GBP' | 'USD';
-export type SubscriptionCurrency = 'GBP' | 'USD';
+export type SubscriptionCurrency = 'GBP' | 'USD' | 'EUR';
 export type SubscriptionPaymentSchedule = 'Weekly' | 'Monthly' | 'Yearly';
 export type SubscriptionCategory = 'Streaming' | 'Storage' | 'Utility' | 'Transport' | 'Finance' | 'Health' | 'Business' | 'Other';
 export type SubscriptionStatus = 'Current' | 'Cancelled';
@@ -147,9 +147,13 @@ export interface Subscription extends OwnedRecord {
   cost: number;
   currency: SubscriptionCurrency;
   paymentDate: ISODate;
+  paymentDay: number;
   paymentSchedule: SubscriptionPaymentSchedule;
   freeTrial: boolean;
   freeTrialExpiryDate: ISODate | null;
+  autoRenew: boolean;
+  contractEndDate: ISODate | null;
+  renewalDate: ISODate | null;
   category: SubscriptionCategory;
   status: SubscriptionStatus;
   endDate: ISODate | null;
@@ -227,6 +231,12 @@ export interface Mortgage extends OwnedRecord {
   termMonths:       number;
   startDate?:       ISODate | null; // used to compute fixed-term expiry
   fixedTermMonths?: number | null;  // optional fixed-rate period length in months
+  monthlyPaymentAmount: number;
+  paymentDay:       number;
+  proRataFirstPayment: boolean;
+  potId:            PotId;
+  incomeSourceId:   IncomeSourceId;
+  isCriticalExpense: boolean;
   archived:         boolean;
 }
 

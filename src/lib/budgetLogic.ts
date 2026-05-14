@@ -4,10 +4,12 @@ import type {
   SavingAmountHistory,
   Subscription,
   SubscriptionPriceHistory,
+  Mortgage,
   PotId,
   IncomeSourceId,
   IncomeSourceType,
 } from './types';
+import { subscriptionCancellationCutoff } from './subscriptionCalc';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -153,6 +155,51 @@ function toResolvedSubscriptionItem(
   };
 }
 
+function daysInMonth(month: string): number {
+  const [yearPart, monthPart] = month.split('-').map(Number);
+  return new Date(yearPart, monthPart, 0).getDate();
+}
+
+export function mortgagePaymentAmountForMonth(mortgage: Mortgage, month: string): number {
+  if (!mortgage.proRataFirstPayment || !mortgage.startDate || mortgage.startDate.slice(0, 7) !== month) {
+    return mortgage.monthlyPaymentAmount;
+  }
+
+  const startDay = Number(mortgage.startDate.slice(8, 10));
+  const lastDay = daysInMonth(month);
+  const paymentDay = Math.min(Math.max(mortgage.paymentDay, 1), lastDay);
+  const chargeableDays = paymentDay >= startDay
+    ? paymentDay - startDay + 1
+    : lastDay - startDay + 1;
+  return mortgage.monthlyPaymentAmount * (Math.max(chargeableDays, 0) / lastDay);
+}
+
+export function resolveMortgageForMonth(
+  mortgage: Mortgage,
+  month: string,
+): ResolvedLineItem | null {
+  if (mortgage.archived) return null;
+  if (!mortgage.startDate || mortgage.startDate.slice(0, 7) > month) return null;
+  if (!mortgage.potId || !mortgage.incomeSourceId || mortgage.monthlyPaymentAmount <= 0) return null;
+
+  return {
+    id: `mortgage-${mortgage.id}`,
+    sourceType: 'expense',
+    sourceId: mortgage.id,
+    incomeSourceId: mortgage.incomeSourceId,
+    defaultIncomeSourceId: mortgage.incomeSourceId,
+    incomeSourceName: '',
+    ownerUserIds: mortgage.ownerUserIds,
+    defaultOwnerUserIds: mortgage.ownerUserIds,
+    name: mortgage.lender,
+    amount: mortgagePaymentAmountForMonth(mortgage, month),
+    potId: mortgage.potId,
+    defaultPotId: mortgage.potId,
+    potName: '',
+    isCritical: mortgage.isCriticalExpense,
+  };
+}
+
 export function resolveSubscriptionForMonth(
   subscription: Subscription,
   history: SubscriptionPriceHistory[],
@@ -160,7 +207,8 @@ export function resolveSubscriptionForMonth(
 ): ResolvedLineItem | null {
   if (subscription.archived) return null;
   if (subscription.paymentDate.slice(0, 7) > month) return null;
-  if (subscription.status === 'Cancelled' && subscription.endDate && subscription.endDate.slice(0, 7) < month) return null;
+  const cancellationCutoff = subscriptionCancellationCutoff(subscription);
+  if (subscription.status === 'Cancelled' && cancellationCutoff && cancellationCutoff.slice(0, 7) < month) return null;
 
   if (subscription.paymentSchedule === 'Yearly') {
     const dueMonth = subscription.paymentDate.slice(5, 7);
@@ -208,6 +256,7 @@ export function resolveItemsForMonth(
   savingAmountHistory: SavingAmountHistory[] = [],
   subscriptions: Subscription[] = [],
   subscriptionPriceHistory: SubscriptionPriceHistory[] = [],
+  mortgages: Mortgage[] = [],
 ): ResolvedLineItem[] {
   const out: ResolvedLineItem[] = [];
 
@@ -218,6 +267,11 @@ export function resolveItemsForMonth(
 
   for (const subscription of subscriptions) {
     const resolved = resolveSubscriptionForMonth(subscription, subscriptionPriceHistory, month);
+    if (resolved) out.push(resolved);
+  }
+
+  for (const mortgage of mortgages) {
+    const resolved = resolveMortgageForMonth(mortgage, month);
     if (resolved) out.push(resolved);
   }
 
@@ -253,9 +307,10 @@ export function createBudget(
   savingAmountHistory: SavingAmountHistory[] = [],
   subscriptions: Subscription[] = [],
   subscriptionPriceHistory: SubscriptionPriceHistory[] = [],
+  mortgages: Mortgage[] = [],
 ): LocalBudget {
   const preparedExpenses = applyPendingOneOffExpensesToBudgetMonth(month, expenses);
-  const items = resolveItemsForMonth(month, preparedExpenses, savings, savingAmountHistory, subscriptions, subscriptionPriceHistory);
+  const items = resolveItemsForMonth(month, preparedExpenses, savings, savingAmountHistory, subscriptions, subscriptionPriceHistory, mortgages);
 
   return {
     id:       `budget-${Date.now()}`,
@@ -275,6 +330,7 @@ export function refreshBudget(
   savingAmountHistory: SavingAmountHistory[] = [],
   subscriptions: Subscription[] = [],
   subscriptionPriceHistory: SubscriptionPriceHistory[] = [],
+  mortgages: Mortgage[] = [],
 ): LocalBudget {
   if (budget.locked) {
     return budget;
@@ -287,6 +343,7 @@ export function refreshBudget(
     savingAmountHistory,
     subscriptions,
     subscriptionPriceHistory,
+    mortgages,
   );
   const existingItemsById = new Map(budget.items.map(item => [item.id, item]));
 

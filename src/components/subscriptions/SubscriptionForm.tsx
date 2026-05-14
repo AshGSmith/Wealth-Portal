@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import Sheet from '@/components/ui/Sheet';
 import OwnerSelector from '@/components/ui/OwnerSelector';
+import { SUBSCRIPTION_CURRENCIES } from '@/lib/subscriptionCurrency';
 import type { AccessibleUser } from '@/lib/auth/types';
 import type {
   IncomeSource,
@@ -19,7 +20,6 @@ import type {
   SubscriptionStatus,
 } from '@/lib/types';
 
-const CURRENCIES: SubscriptionCurrency[] = ['GBP', 'USD'];
 const SCHEDULES: SubscriptionPaymentSchedule[] = ['Weekly', 'Monthly', 'Yearly'];
 const CATEGORIES: SubscriptionCategory[] = ['Streaming', 'Storage', 'Utility', 'Transport', 'Finance', 'Health', 'Business', 'Other'];
 const STATUSES: SubscriptionStatus[] = ['Current', 'Cancelled'];
@@ -41,10 +41,14 @@ interface FormState {
   cost: string;
   currency: SubscriptionCurrency;
   paymentDate: string;
+  paymentDay: string;
   paymentSchedule: SubscriptionPaymentSchedule;
   freeTrial: boolean;
   freeTrialExpiryDate: string;
-  category: SubscriptionCategory;
+  autoRenew: boolean;
+  contractEndDate: string;
+  renewalDate: string;
+  category: SubscriptionCategory | '';
   status: SubscriptionStatus;
   endDate: string;
   paymentMethod: SubscriptionPaymentMethod;
@@ -56,6 +60,11 @@ interface FormState {
 
 function today(): string {
   return new Date().toISOString().slice(0, 10);
+}
+
+function paymentDayFromDate(value: string): string {
+  const day = Number(value.slice(8, 10));
+  return Number.isInteger(day) && day >= 1 && day <= 31 ? String(day) : '1';
 }
 
 function addMonths(date: Date, months: number): Date {
@@ -80,10 +89,14 @@ function blank(sources: IncomeSource[], currentUserId: string | null): FormState
     cost: '',
     currency: 'GBP',
     paymentDate: today(),
+    paymentDay: paymentDayFromDate(today()),
     paymentSchedule: 'Monthly',
     freeTrial: false,
     freeTrialExpiryDate: '',
-    category: 'Other',
+    autoRenew: false,
+    contractEndDate: '',
+    renewalDate: '',
+    category: '',
     status: 'Current',
     endDate: '',
     paymentMethod: 'Card',
@@ -100,9 +113,13 @@ function fromSubscription(subscription: Subscription): FormState {
     cost: String(subscription.cost),
     currency: subscription.currency,
     paymentDate: subscription.paymentDate,
+    paymentDay: String(subscription.paymentDay ?? paymentDayFromDate(subscription.paymentDate)),
     paymentSchedule: subscription.paymentSchedule,
     freeTrial: subscription.freeTrial,
     freeTrialExpiryDate: subscription.freeTrialExpiryDate ?? '',
+    autoRenew: subscription.autoRenew,
+    contractEndDate: subscription.contractEndDate ?? '',
+    renewalDate: subscription.renewalDate ?? '',
     category: subscription.category,
     status: subscription.status,
     endDate: subscription.endDate ?? '',
@@ -154,6 +171,7 @@ export default function SubscriptionForm({
     setForm(prev => ({
       ...prev,
       paymentDate,
+      paymentDay: prev.paymentDay || paymentDayFromDate(paymentDate),
       endDate: prev.status === 'Cancelled' && !endDateTouched
         ? defaultEndDate(paymentDate, prev.paymentSchedule)
         : prev.endDate,
@@ -178,8 +196,13 @@ export default function SubscriptionForm({
     if (!form.cost.trim()) nextErrors.cost = 'Required';
     else if (Number(form.cost) <= 0) nextErrors.cost = 'Must be > 0';
     if (!form.paymentDate) nextErrors.paymentDate = 'Required';
+    if (!form.paymentDay.trim()) nextErrors.paymentDay = 'Required';
+    else if (!Number.isInteger(Number(form.paymentDay)) || Number(form.paymentDay) < 1 || Number(form.paymentDay) > 31) {
+      nextErrors.paymentDay = 'Use 1-31';
+    }
     if (form.status === 'Cancelled' && !form.endDate) nextErrors.endDate = 'Required';
     if (form.freeTrial && !form.freeTrialExpiryDate) nextErrors.freeTrialExpiryDate = 'Required';
+    if (!form.category) nextErrors.category = 'Required';
     if (!form.potId) nextErrors.potId = 'Required';
     if (!form.incomeSourceId) nextErrors.incomeSourceId = 'Required';
     if (form.ownerUserIds.length === 0) nextErrors.ownerUserIds = 'Required';
@@ -196,10 +219,14 @@ export default function SubscriptionForm({
       cost: parseFloat(form.cost),
       currency: form.currency,
       paymentDate: form.paymentDate as ISODate,
+      paymentDay: Number(form.paymentDay),
       paymentSchedule: form.paymentSchedule,
       freeTrial: form.freeTrial,
       freeTrialExpiryDate: form.freeTrial ? (form.freeTrialExpiryDate as ISODate) : null,
-      category: form.category,
+      autoRenew: form.autoRenew,
+      contractEndDate: form.contractEndDate ? (form.contractEndDate as ISODate) : null,
+      renewalDate: form.autoRenew && form.renewalDate ? (form.renewalDate as ISODate) : null,
+      category: form.category as SubscriptionCategory,
       status: form.status,
       endDate: form.status === 'Cancelled' ? (form.endDate as ISODate) : null,
       paymentMethod: form.paymentMethod,
@@ -281,7 +308,7 @@ export default function SubscriptionForm({
               Currency
             </label>
             <select value={form.currency} onChange={event => set('currency', event.target.value as SubscriptionCurrency)} className={inputCls} style={inputStyle}>
-              {CURRENCIES.map(currency => <option key={currency} value={currency}>{currency}</option>)}
+              {SUBSCRIPTION_CURRENCIES.map(currency => <option key={currency} value={currency}>{currency}</option>)}
             </select>
           </div>
         </div>
@@ -289,7 +316,7 @@ export default function SubscriptionForm({
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div>
             <label className="mb-1.5 block text-xs font-medium" style={{ color: 'var(--muted)' }}>
-              Payment date <span className="text-rose-500">*</span>
+              Start date <span className="text-rose-500">*</span>
             </label>
             <input
               type="date"
@@ -310,14 +337,34 @@ export default function SubscriptionForm({
           </div>
         </div>
 
+        <div>
+          <label className="mb-1.5 block text-xs font-medium" style={{ color: 'var(--muted)' }}>
+            Payment day <span className="text-rose-500">*</span>
+          </label>
+          <input
+            type="number"
+            min="1"
+            max="31"
+            step="1"
+            value={form.paymentDay}
+            onChange={event => set('paymentDay', event.target.value)}
+            placeholder="e.g. 15"
+            className={inputCls}
+            style={{ ...inputStyle, borderColor: errors.paymentDay ? '#f43f5e' : 'var(--border)' }}
+          />
+          {errors.paymentDay && <p className="mt-1 text-xs text-rose-500">{errors.paymentDay}</p>}
+        </div>
+
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div>
             <label className="mb-1.5 block text-xs font-medium" style={{ color: 'var(--muted)' }}>
               Category
             </label>
-            <select value={form.category} onChange={event => set('category', event.target.value as SubscriptionCategory)} className={inputCls} style={inputStyle}>
+            <select value={form.category} onChange={event => set('category', event.target.value as SubscriptionCategory)} className={inputCls} style={{ ...inputStyle, borderColor: errors.category ? '#f43f5e' : 'var(--border)' }}>
+              <option value="" disabled>Select a category...</option>
               {CATEGORIES.map(category => <option key={category} value={category}>{category}</option>)}
             </select>
+            {errors.category && <p className="mt-1 text-xs text-rose-500">{errors.category}</p>}
           </div>
           <div>
             <label className="mb-1.5 block text-xs font-medium" style={{ color: 'var(--muted)' }}>
@@ -347,6 +394,44 @@ export default function SubscriptionForm({
             {errors.endDate && <p className="mt-1 text-xs text-rose-500">{errors.endDate}</p>}
           </div>
         )}
+
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div>
+            <label className="mb-1.5 block text-xs font-medium" style={{ color: 'var(--muted)' }}>
+              Contract end
+            </label>
+            <input
+              type="date"
+              value={form.contractEndDate}
+              onChange={event => set('contractEndDate', event.target.value)}
+              className={inputCls}
+              style={inputStyle}
+            />
+          </div>
+          <div>
+            <label className="mb-1.5 block text-xs font-medium" style={{ color: 'var(--muted)' }}>
+              Renewal date
+            </label>
+            <input
+              type="date"
+              value={form.renewalDate}
+              onChange={event => set('renewalDate', event.target.value)}
+              disabled={!form.autoRenew}
+              className={inputCls}
+              style={{ ...inputStyle, opacity: form.autoRenew ? 1 : 0.6 }}
+            />
+          </div>
+        </div>
+
+        <label className="flex cursor-pointer items-center gap-3">
+          <input
+            type="checkbox"
+            checked={form.autoRenew}
+            onChange={event => set('autoRenew', event.target.checked)}
+            className="h-4 w-4 cursor-pointer rounded accent-blue-500"
+          />
+          <span className="text-sm font-medium" style={{ color: 'var(--foreground)' }}>Auto renew</span>
+        </label>
 
         <div>
           <label className="mb-1.5 block text-xs font-medium" style={{ color: 'var(--muted)' }}>

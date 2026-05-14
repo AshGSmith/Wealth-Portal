@@ -4,10 +4,12 @@ import { useState } from 'react';
 import Sheet from '@/components/ui/Sheet';
 import OwnerSelector from '@/components/ui/OwnerSelector';
 import type { AccessibleUser } from '@/lib/auth/types';
-import type { Mortgage, MortgageId } from '@/lib/types';
+import type { IncomeSource, IncomeSourceId, Mortgage, MortgageId, Pot, PotId } from '@/lib/types';
 
 interface Props {
   mortgage: Mortgage | null;
+  pots: Pot[];
+  sources: IncomeSource[];
   ownerOptions: AccessibleUser[];
   currentUserId: string | null;
   open:     boolean;
@@ -22,11 +24,31 @@ interface FormState {
   termMonths:      string;
   startDate:       string;
   fixedTermMonths: string;
+  monthlyPaymentAmount: string;
+  paymentDay:      string;
+  proRataFirstPayment: boolean;
+  potId:           string;
+  incomeSourceId:  string;
+  isCriticalExpense: boolean;
   ownerUserIds:    string[];
 }
 
-function blank(): FormState {
-  return { lender: '', amountBorrowed: '', interestRate: '', termMonths: '', startDate: '', fixedTermMonths: '', ownerUserIds: [] };
+function blank(sources: IncomeSource[]): FormState {
+  return {
+    lender: '',
+    amountBorrowed: '',
+    interestRate: '',
+    termMonths: '',
+    startDate: '',
+    fixedTermMonths: '',
+    monthlyPaymentAmount: '',
+    paymentDay: '1',
+    proRataFirstPayment: false,
+    potId: '',
+    incomeSourceId: sources.find(source => !source.archived)?.id ?? '',
+    isCriticalExpense: true,
+    ownerUserIds: [],
+  };
 }
 
 function fromMortgage(m: Mortgage): FormState {
@@ -37,6 +59,12 @@ function fromMortgage(m: Mortgage): FormState {
     termMonths:      String(m.termMonths),
     startDate:       m.startDate ?? '',
     fixedTermMonths: m.fixedTermMonths ? String(m.fixedTermMonths) : '',
+    monthlyPaymentAmount: m.monthlyPaymentAmount ? String(m.monthlyPaymentAmount) : '',
+    paymentDay:      String(m.paymentDay ?? 1),
+    proRataFirstPayment: m.proRataFirstPayment ?? false,
+    potId:           m.potId ?? '',
+    incomeSourceId:  m.incomeSourceId ?? '',
+    isCriticalExpense: m.isCriticalExpense ?? true,
     ownerUserIds:    m.ownerUserIds,
   };
 }
@@ -47,8 +75,8 @@ const inputStyle = {
   color: 'var(--foreground)', colorScheme: 'dark' as const,
 };
 
-export default function MortgageForm({ mortgage, ownerOptions, currentUserId, open, onClose, onSave }: Props) {
-  const [form,   setForm]   = useState<FormState>(() => mortgage ? fromMortgage(mortgage) : { ...blank(), ownerUserIds: currentUserId ? [currentUserId] : [] });
+export default function MortgageForm({ mortgage, pots, sources, ownerOptions, currentUserId, open, onClose, onSave }: Props) {
+  const [form,   setForm]   = useState<FormState>(() => mortgage ? fromMortgage(mortgage) : { ...blank(sources), ownerUserIds: currentUserId ? [currentUserId] : [] });
   const [errors, setErrors] = useState<Partial<Record<keyof FormState, string>>>({});
 
   function set<K extends keyof FormState>(key: K, value: FormState[K]) {
@@ -66,6 +94,14 @@ export default function MortgageForm({ mortgage, ownerOptions, currentUserId, op
     if (!form.termMonths.trim())                       errs.termMonths     = 'Required';
     else if (!Number.isInteger(Number(form.termMonths)) || Number(form.termMonths) <= 0)
                                                        errs.termMonths     = 'Must be a whole number > 0';
+    if (!form.startDate)                               errs.startDate      = 'Required';
+    if (!form.monthlyPaymentAmount.trim())             errs.monthlyPaymentAmount = 'Required';
+    else if (Number(form.monthlyPaymentAmount) <= 0)   errs.monthlyPaymentAmount = 'Must be > 0';
+    if (!form.paymentDay.trim())                       errs.paymentDay = 'Required';
+    else if (!Number.isInteger(Number(form.paymentDay)) || Number(form.paymentDay) < 1 || Number(form.paymentDay) > 31)
+                                                       errs.paymentDay = 'Use 1-31';
+    if (!form.potId)                                   errs.potId = 'Required';
+    if (!form.incomeSourceId)                          errs.incomeSourceId = 'Required';
     if (form.ownerUserIds.length === 0)                errs.ownerUserIds   = 'Required';
     setErrors(errs);
     return Object.keys(errs).length === 0;
@@ -81,6 +117,12 @@ export default function MortgageForm({ mortgage, ownerOptions, currentUserId, op
       termMonths:      parseInt(form.termMonths, 10),
       startDate:       form.startDate || null,
       fixedTermMonths: form.fixedTermMonths.trim() ? parseInt(form.fixedTermMonths, 10) : null,
+      monthlyPaymentAmount: parseFloat(form.monthlyPaymentAmount),
+      paymentDay:      parseInt(form.paymentDay, 10),
+      proRataFirstPayment: form.proRataFirstPayment,
+      potId:           form.potId as PotId,
+      incomeSourceId:  form.incomeSourceId as IncomeSourceId,
+      isCriticalExpense: form.isCriticalExpense,
       ownerUserIds:    form.ownerUserIds,
       archived:        mortgage?.archived ?? false,
     });
@@ -88,6 +130,8 @@ export default function MortgageForm({ mortgage, ownerOptions, currentUserId, op
   }
 
   const termYears = form.termMonths ? (parseInt(form.termMonths) / 12).toFixed(1) : null;
+  const activePots = pots.filter(pot => !pot.archived);
+  const activeSources = sources.filter(source => !source.archived);
 
   const title = (
     <h2 className="text-base font-semibold" style={{ color: 'var(--foreground)' }}>
@@ -133,8 +177,76 @@ export default function MortgageForm({ mortgage, ownerOptions, currentUserId, op
           </label>
           <input type="date" value={form.startDate} onChange={e => set('startDate', e.target.value)}
             className={inputCls}
-            style={{ ...inputStyle, colorScheme: 'dark' }} />
+            style={{ ...inputStyle, borderColor: errors.startDate ? '#f43f5e' : 'var(--border)', colorScheme: 'dark' }} />
+          {errors.startDate && <p className="mt-1 text-xs text-rose-500">{errors.startDate}</p>}
         </div>
+
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div>
+            <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--muted)' }}>
+              Monthly payment <span className="text-rose-500">*</span>
+            </label>
+            <div className="relative">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm" style={{ color: 'var(--muted)' }}>£</span>
+              <input type="number" min="0" step="0.01" value={form.monthlyPaymentAmount}
+                onChange={e => set('monthlyPaymentAmount', e.target.value)}
+                placeholder="0.00"
+                className={inputCls + ' pl-7'}
+                style={{ ...inputStyle, borderColor: errors.monthlyPaymentAmount ? '#f43f5e' : 'var(--border)' }} />
+            </div>
+            {errors.monthlyPaymentAmount && <p className="mt-1 text-xs text-rose-500">{errors.monthlyPaymentAmount}</p>}
+          </div>
+          <div>
+            <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--muted)' }}>
+              Payment day <span className="text-rose-500">*</span>
+            </label>
+            <input type="number" min="1" max="31" step="1" value={form.paymentDay}
+              onChange={e => set('paymentDay', e.target.value)}
+              placeholder="e.g. 15"
+              className={inputCls}
+              style={{ ...inputStyle, borderColor: errors.paymentDay ? '#f43f5e' : 'var(--border)' }} />
+            {errors.paymentDay && <p className="mt-1 text-xs text-rose-500">{errors.paymentDay}</p>}
+          </div>
+        </div>
+
+        <label className="flex items-center gap-3 cursor-pointer">
+          <input type="checkbox" checked={form.proRataFirstPayment} onChange={e => set('proRataFirstPayment', e.target.checked)}
+            className="h-4 w-4 rounded accent-blue-500 cursor-pointer" />
+          <div>
+            <p className="text-sm font-medium" style={{ color: 'var(--foreground)' }}>Pro-rata first payment</p>
+            <p className="text-xs mt-0.5" style={{ color: 'var(--muted)' }}>Only affects the first budget month</p>
+          </div>
+        </label>
+
+        <div>
+          <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--muted)' }}>
+            Pot <span className="text-rose-500">*</span>
+          </label>
+          <select value={form.potId} onChange={e => set('potId', e.target.value)} className={inputCls}
+            style={{ ...inputStyle, borderColor: errors.potId ? '#f43f5e' : 'var(--border)' }}>
+            <option value="" disabled>Select a pot...</option>
+            {activePots.map(pot => <option key={pot.id} value={pot.id}>{pot.name}</option>)}
+          </select>
+          {errors.potId && <p className="mt-1 text-xs text-rose-500">{errors.potId}</p>}
+        </div>
+
+        <div>
+          <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--muted)' }}>
+            Income source <span className="text-rose-500">*</span>
+          </label>
+          <select value={form.incomeSourceId} onChange={e => set('incomeSourceId', e.target.value)} className={inputCls}
+            style={{ ...inputStyle, borderColor: errors.incomeSourceId ? '#f43f5e' : 'var(--border)' }}>
+            <option value="" disabled>Select a source...</option>
+            {activeSources.map(source => <option key={source.id} value={source.id}>{source.provider}</option>)}
+          </select>
+          {errors.incomeSourceId && <p className="mt-1 text-xs text-rose-500">{errors.incomeSourceId}</p>}
+        </div>
+
+        <label className="flex items-center gap-3 cursor-pointer">
+          <input type="checkbox" checked={form.isCriticalExpense} onChange={e => set('isCriticalExpense', e.target.checked)}
+            className="h-4 w-4 rounded accent-blue-500 cursor-pointer" />
+          <span className="text-sm font-medium" style={{ color: 'var(--foreground)' }}>Critical expense</span>
+        </label>
 
         {/* Amount borrowed */}
         <div>

@@ -2,7 +2,10 @@ import { useStore } from './store';
 import { resolveInvestmentCurrentValue, useInvestmentMarketQuotes, type InvestmentMarketQuoteMap } from './investmentCalc';
 import type {
   Property, Mortgage, MortgagePayment,
-  SavingsAccount, Debt, Pension, PensionPayment, InvestmentHolding, InvestmentPurchase, InvestmentValuationHistory,
+  SavingsAccount, SavingsHistory,
+  Debt, DebtHistory,
+  Pension, PensionHistory, PensionPayment,
+  InvestmentHolding, InvestmentPurchase, InvestmentValuationHistory,
 } from './types';
 
 // ─── Output types ─────────────────────────────────────────────────────────────
@@ -31,8 +34,27 @@ export interface MortgageFixedTermAlert {
   daysUntilEnd: number;
 }
 
+export interface WealthCalcInput {
+  properties: Property[];
+  mortgages: Mortgage[];
+  mortgagePayments: MortgagePayment[];
+  savingsAccounts: SavingsAccount[];
+  savingsHistory?: SavingsHistory[];
+  debts: Debt[];
+  debtHistory?: DebtHistory[];
+  pensions: Pension[];
+  pensionHistory?: PensionHistory[];
+  investments: InvestmentHolding[];
+  investmentPurchases: InvestmentPurchase[];
+  investmentValuationHistory: InvestmentValuationHistory[];
+}
+
 function currentIsoDate(): string {
   return isoDateFromLocalDate(new Date());
+}
+
+function currentYearMonth(): string {
+  return currentIsoDate().slice(0, 7);
 }
 
 function isoDateFromLocalDate(date: Date): string {
@@ -49,6 +71,14 @@ function parseIsoDate(value: string): Date {
 
 function addMonths(date: Date, months: number): Date {
   return new Date(date.getFullYear(), date.getMonth() + months, date.getDate());
+}
+
+function monthEnd(month: string): string {
+  const [yearPart, monthPart] = month.split('-');
+  const year = Number(yearPart);
+  const monthIndex = Number(monthPart) - 1;
+  const date = new Date(year, monthIndex + 1, 0);
+  return isoDateFromLocalDate(date);
 }
 
 export function mortgageFixedTermEndDate(mortgage: Mortgage): string | null {
@@ -183,22 +213,77 @@ export function totalInvestmentValue(
     ), 0);
 }
 
+function snapshotBalanceForMonth<T extends { id: string; archived: boolean; currentBalance: number }, H extends { date: string; balance: number }>(
+  records: T[],
+  history: H[],
+  getHistoryRecordId: (entry: H) => string,
+  month: string,
+): number {
+  const isCurrentOrFutureMonth = month >= currentYearMonth();
+
+  return records
+    .filter(record => !record.archived)
+    .reduce((sum, record) => {
+      const latestSnapshot = history
+        .filter(entry => getHistoryRecordId(entry) === record.id && entry.date.slice(0, 7) <= month)
+        .sort((a, b) => a.date.localeCompare(b.date))
+        .at(-1);
+
+      if (latestSnapshot) return sum + latestSnapshot.balance;
+      return sum + (isCurrentOrFutureMonth ? record.currentBalance : 0);
+    }, 0);
+}
+
+function totalMortgageLiabilitiesForMonth(
+  mortgages: Mortgage[],
+  payments: MortgagePayment[],
+  month: string,
+): number {
+  const asOfIso = monthEnd(month);
+
+  return mortgages
+    .filter(mortgage => isMortgageCurrentAsOf(mortgage, asOfIso))
+    .reduce((sum, mortgage) => {
+      const paymentsToMonth = payments.filter(payment => payment.mortgageId === mortgage.id && payment.date <= asOfIso);
+      return sum + mortgageLiability(mortgage, paymentsToMonth);
+    }, 0);
+}
+
+function totalInvestmentValueForMonth(
+  investments: InvestmentHolding[],
+  purchases: InvestmentPurchase[],
+  valuationHistory: InvestmentValuationHistory[],
+  month: string,
+  marketQuotes?: InvestmentMarketQuoteMap,
+): number {
+  if (month >= currentYearMonth()) {
+    return totalInvestmentValue(investments, purchases, valuationHistory, marketQuotes);
+  }
+
+  const asOfIso = monthEnd(month);
+  const purchasesToMonth = purchases.filter(purchase => purchase.purchaseDate <= asOfIso);
+  const valuationHistoryToMonth = valuationHistory.filter(valuation => valuation.valuationDate <= asOfIso);
+  return totalInvestmentValue(investments, purchasesToMonth, valuationHistoryToMonth);
+}
+
 // ─── React hook ──────────────────────────────────────────────────────────────
 
 /** Reactive wealth snapshot — re-calculates whenever any store value changes. */
 export function useWealthCalc(): WealthCalc {
   const store = useStore();
   const marketQuotes = useInvestmentMarketQuotes(store.investments, store.investmentPurchases);
-  return calcWealth(
-    store.properties,
-    store.mortgages,
-    store.mortgagePayments,
-    store.savingsAccounts,
-    store.debts,
-    store.pensions,
-    store.investments,
-    store.investmentPurchases,
-    store.investmentValuationHistory,
+  return calcCurrentWealth(
+    {
+      properties: store.properties,
+      mortgages: store.mortgages,
+      mortgagePayments: store.mortgagePayments,
+      savingsAccounts: store.savingsAccounts,
+      debts: store.debts,
+      pensions: store.pensions,
+      investments: store.investments,
+      investmentPurchases: store.investmentPurchases,
+      investmentValuationHistory: store.investmentValuationHistory,
+    },
     marketQuotes,
   );
 }
@@ -232,6 +317,79 @@ export function calcWealth(
   const debtLiabilities      = totalDebtBalance(debts);
 
   const totalAssets      = propertyAssets + savingsAssets + pensionAssets + investmentAssets;
+  const totalLiabilities = mortgageLiabilities + debtLiabilities;
+
+  return {
+    propertyAssets,
+    savingsAssets,
+    pensionAssets,
+    investmentAssets,
+    totalAssets,
+    mortgageLiabilities,
+    debtLiabilities,
+    totalLiabilities,
+    netWorth: totalAssets - totalLiabilities,
+  };
+}
+
+export function calcCurrentWealth(
+  input: WealthCalcInput,
+  marketQuotes?: InvestmentMarketQuoteMap,
+  asOfIso = currentIsoDate(),
+): WealthCalc {
+  return calcWealth(
+    input.properties,
+    input.mortgages,
+    input.mortgagePayments,
+    input.savingsAccounts,
+    input.debts,
+    input.pensions,
+    input.investments,
+    input.investmentPurchases,
+    input.investmentValuationHistory,
+    marketQuotes,
+    asOfIso,
+  );
+}
+
+export function calcWealthForMonth(
+  input: WealthCalcInput,
+  month: string,
+  marketQuotes?: InvestmentMarketQuoteMap,
+): WealthCalc {
+  if (month === currentYearMonth()) {
+    return calcCurrentWealth(input, marketQuotes);
+  }
+
+  const asOfIso = monthEnd(month);
+  const propertyAssets = totalPropertyValue(input.properties, asOfIso);
+  const savingsAssets = snapshotBalanceForMonth(
+    input.savingsAccounts,
+    input.savingsHistory ?? [],
+    entry => entry.savingsAccountId as string,
+    month,
+  );
+  const pensionAssets = snapshotBalanceForMonth(
+    input.pensions,
+    input.pensionHistory ?? [],
+    entry => entry.pensionId as string,
+    month,
+  );
+  const investmentAssets = totalInvestmentValueForMonth(
+    input.investments,
+    input.investmentPurchases,
+    input.investmentValuationHistory,
+    month,
+    marketQuotes,
+  );
+  const mortgageLiabilities = totalMortgageLiabilitiesForMonth(input.mortgages, input.mortgagePayments, month);
+  const debtLiabilities = snapshotBalanceForMonth(
+    input.debts,
+    input.debtHistory ?? [],
+    entry => entry.debtId as string,
+    month,
+  );
+  const totalAssets = propertyAssets + savingsAssets + pensionAssets + investmentAssets;
   const totalLiabilities = mortgageLiabilities + debtLiabilities;
 
   return {

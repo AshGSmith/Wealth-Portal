@@ -29,14 +29,15 @@ export default function NewBudgetModal({ open, onClose, onCreate, existingMonths
 
   const preview = useMemo(() => {
     if (!month) return null;
-    const items    = resolveItemsForMonth(month, store.expenses, store.savings, store.savingAmountHistory, store.subscriptions, store.subscriptionPriceHistory);
+    const items    = resolveItemsForMonth(month, store.expenses, store.savings, store.savingAmountHistory, store.subscriptions, store.subscriptionPriceHistory, store.mortgages);
     const expenses = items.filter(i => i.sourceType === 'expense');
     const savings  = items.filter(i => i.sourceType === 'saving');
     const total    = store.expenses.filter(e => !e.archived).length +
                      store.subscriptions.filter(subscription => !subscription.archived).length +
+                     store.mortgages.filter(mortgage => !mortgage.archived && mortgage.monthlyPaymentAmount > 0).length +
                      store.savings.filter(s => !s.archived).length;
     return { expenses, savings, included: items.length, excluded: total - items.length };
-  }, [month, store.expenses, store.savingAmountHistory, store.savings, store.subscriptionPriceHistory, store.subscriptions]);
+  }, [month, store.expenses, store.mortgages, store.savingAmountHistory, store.savings, store.subscriptionPriceHistory, store.subscriptions]);
 
   const isDuplicate = existingMonths.includes(month);
 

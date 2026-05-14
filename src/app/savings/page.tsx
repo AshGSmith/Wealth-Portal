@@ -21,8 +21,10 @@ export default function SavingsPage() {
 
   const activePots = store.pots.filter(p => !p.archived);
   const activeSources = store.sources.filter(source => !source.archived);
-  const active     = store.savings.filter(s => !s.archived);
-  const archived   = store.savings.filter(s =>  s.archived);
+  const sortByCriticalThenName = (a: Saving, b: Saving) =>
+    Number(b.isCritical) - Number(a.isCritical) || a.name.localeCompare(b.name);
+  const active     = store.savings.filter(s => !s.archived).sort(sortByCriticalThenName);
+  const archived   = store.savings.filter(s =>  s.archived).sort(sortByCriticalThenName);
 
   function openCreate() { setEditing(null); setShowForm(true); }
   function openEdit(saving: Saving) { setEditing(saving); setShowForm(true); }

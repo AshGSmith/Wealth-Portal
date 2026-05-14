@@ -18,8 +18,10 @@ export default function ExpensesPage() {
 
   const activePots = store.pots.filter(p => !p.archived);
   const activeSources = store.sources.filter(source => !source.archived);
-  const active     = store.expenses.filter(e => !e.archived);
-  const archived   = store.expenses.filter(e =>  e.archived);
+  const sortByCriticalThenName = (a: Expense, b: Expense) =>
+    Number(b.isCritical) - Number(a.isCritical) || a.name.localeCompare(b.name);
+  const active     = store.expenses.filter(e => !e.archived).sort(sortByCriticalThenName);
+  const archived   = store.expenses.filter(e =>  e.archived).sort(sortByCriticalThenName);
 
   function openCreate() { setEditing(null); setShowForm(true); }
   function openEdit(expense: Expense) { setEditing(expense); setShowForm(true); }

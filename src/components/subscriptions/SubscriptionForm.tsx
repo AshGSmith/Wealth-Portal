@@ -404,29 +404,30 @@ export default function SubscriptionForm({
           </div>
         )}
 
-        <label className="flex cursor-pointer items-center gap-3">
+        <div>
+          <label className="mb-1.5 block text-xs font-medium" style={{ color: 'var(--muted)' }}>
+            Contract End Date
+          </label>
           <input
-            type="checkbox"
-            checked={form.autoRenew}
-            onChange={event => setAutoRenew(event.target.checked)}
-            className="h-4 w-4 cursor-pointer rounded accent-blue-500"
+            type="date"
+            value={form.contractEndDate}
+            onChange={event => set('contractEndDate', event.target.value)}
+            className={inputCls}
+            style={inputStyle}
           />
-          <span className="text-sm font-medium" style={{ color: 'var(--foreground)' }}>Auto Renew</span>
-        </label>
+        </div>
 
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <div>
-            <label className="mb-1.5 block text-xs font-medium" style={{ color: 'var(--muted)' }}>
-              Contract End
-            </label>
+        <div className="space-y-3">
+          <label className="flex cursor-pointer items-center gap-3">
             <input
-              type="date"
-              value={form.contractEndDate}
-              onChange={event => set('contractEndDate', event.target.value)}
-              className={inputCls}
-              style={inputStyle}
+              type="checkbox"
+              checked={form.autoRenew}
+              onChange={event => setAutoRenew(event.target.checked)}
+              className="h-4 w-4 cursor-pointer rounded accent-blue-500"
             />
-          </div>
+            <span className="text-sm font-medium" style={{ color: 'var(--foreground)' }}>Auto Renew</span>
+          </label>
+
           {form.autoRenew && (
             <div>
               <label className="mb-1.5 block text-xs font-medium" style={{ color: 'var(--muted)' }}>

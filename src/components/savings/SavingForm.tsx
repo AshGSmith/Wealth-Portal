@@ -166,14 +166,14 @@ export default function SavingForm({ saving, pots, sources, ownerOptions, curren
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--muted)' }}>
-              Start date <span style={{ color: 'var(--muted)' }}>(optional)</span>
+              Start Date <span style={{ color: 'var(--muted)' }}>(optional)</span>
             </label>
             <input type="date" value={form.startDate} onChange={e => set('startDate', e.target.value)}
               className={inputCls} style={inputStyle} />
           </div>
           <div>
             <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--muted)' }}>
-              End date <span style={{ color: 'var(--muted)' }}>(optional)</span>
+              End Date <span style={{ color: 'var(--muted)' }}>(optional)</span>
             </label>
             <input type="date" value={form.endDate} onChange={e => set('endDate', e.target.value)}
               className={inputCls} style={{ ...inputStyle, borderColor: errors.endDate ? '#f43f5e' : 'var(--border)' }} />
@@ -186,7 +186,7 @@ export default function SavingForm({ saving, pots, sources, ownerOptions, curren
           <input type="checkbox" checked={form.isCritical} onChange={e => set('isCritical', e.target.checked)}
             className="h-4 w-4 rounded accent-blue-500 cursor-pointer" />
           <div>
-            <p className="text-sm font-medium" style={{ color: 'var(--foreground)' }}>Critical saving</p>
+            <p className="text-sm font-medium" style={{ color: 'var(--foreground)' }}>Critical Saving</p>
             <p className="text-xs mt-0.5" style={{ color: 'var(--muted)' }}>Non-negotiable — always highlighted</p>
           </div>
         </label>

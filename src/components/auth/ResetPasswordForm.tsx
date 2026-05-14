@@ -14,7 +14,7 @@ export default function ResetPasswordForm({ token }: { token: string }) {
 
       <div>
         <label htmlFor="password" className="mb-1 block text-sm font-medium" style={{ color: 'var(--foreground)' }}>
-          New password
+          New Password
         </label>
         <input
           id="password"
@@ -32,7 +32,7 @@ export default function ResetPasswordForm({ token }: { token: string }) {
 
       <div>
         <label htmlFor="confirmPassword" className="mb-1 block text-sm font-medium" style={{ color: 'var(--foreground)' }}>
-          Confirm password
+          Confirm Password
         </label>
         <input
           id="confirmPassword"

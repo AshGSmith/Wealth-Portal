@@ -76,7 +76,7 @@ export default function SubscriptionResubscribeForm({
         )}
         <div>
           <label className="mb-1.5 block text-xs font-medium" style={{ color: 'var(--muted)' }}>
-            Start date <span className="text-rose-500">*</span>
+            Start Date <span className="text-rose-500">*</span>
           </label>
           <input
             type="date"

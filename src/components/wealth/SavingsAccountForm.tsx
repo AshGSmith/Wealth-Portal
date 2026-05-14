@@ -109,7 +109,7 @@ export default function SavingsAccountForm({ account, open, onClose, onSave, own
         {/* Name */}
         <div>
           <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--muted)' }}>
-            Account name <span className="text-rose-500">*</span>
+            Account Name <span className="text-rose-500">*</span>
           </label>
           <input type="text" value={form.name} onChange={e => set('name', e.target.value)}
             placeholder="e.g. Marcus Easy Access"
@@ -130,10 +130,10 @@ export default function SavingsAccountForm({ account, open, onClose, onSave, own
           {errors.ownerUserIds && <p className="mt-1 text-xs text-rose-500">{errors.ownerUserIds}</p>}
         </div>
 
-        {/* Current balance */}
+        {/* Current Balance */}
         <div>
           <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--muted)' }}>
-            Current balance <span className="text-rose-500">*</span>
+            Current Balance <span className="text-rose-500">*</span>
           </label>
           <div className="relative">
             <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm" style={{ color: 'var(--muted)' }}>£</span>
@@ -151,10 +151,10 @@ export default function SavingsAccountForm({ account, open, onClose, onSave, own
           )}
         </div>
 
-        {/* Interest rate */}
+        {/* Interest Rate */}
         <div>
           <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--muted)' }}>
-            Target savings amount
+            Target Savings Amount
           </label>
           <div className="relative">
             <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm" style={{ color: 'var(--muted)' }}>£</span>
@@ -170,10 +170,10 @@ export default function SavingsAccountForm({ account, open, onClose, onSave, own
           {errors.targetSavingsAmount && <p className="mt-1 text-xs text-rose-500">{errors.targetSavingsAmount}</p>}
         </div>
 
-        {/* Interest rate */}
+        {/* Interest Rate */}
         <div>
           <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--muted)' }}>
-            Interest rate <span className="text-rose-500">*</span>
+            Interest Rate <span className="text-rose-500">*</span>
           </label>
           <div className="relative">
             <input type="number" min="0" step="0.01" value={form.interestRate}

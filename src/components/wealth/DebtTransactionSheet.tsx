@@ -85,7 +85,7 @@ export default function DebtTransactionSheet({ debt, mode, open, onClose, onAppl
         {currentDebt.name} — {actionLabel}
       </h2>
       <p className="mt-0.5 text-xs" style={{ color: 'var(--muted)' }}>
-        Current balance: <span style={{ color: 'var(--foreground)' }}>{fmtCurrency(currentDebt.currentBalance)}</span>
+        Current Balance: <span style={{ color: 'var(--foreground)' }}>{fmtCurrency(currentDebt.currentBalance)}</span>
       </p>
     </div>
   );

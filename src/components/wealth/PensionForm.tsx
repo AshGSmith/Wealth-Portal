@@ -141,10 +141,10 @@ export default function PensionForm({ pension, open, onClose, onSave, ownerOptio
           {errors.ownerUserIds && <p className="mt-1 text-xs text-rose-500">{errors.ownerUserIds}</p>}
         </div>
 
-        {/* Current balance */}
+        {/* Current Balance */}
         <div>
           <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--muted)' }}>
-            Current value <span className="text-rose-500">*</span>
+            Current Value <span className="text-rose-500">*</span>
           </label>
           <div className="relative">
             <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm" style={{ color: 'var(--muted)' }}>£</span>
@@ -163,7 +163,7 @@ export default function PensionForm({ pension, open, onClose, onSave, ownerOptio
 
         <div>
           <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--muted)' }}>
-            Initial investment
+            Initial Investment
           </label>
           <div className="relative">
             <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm" style={{ color: 'var(--muted)' }}>£</span>

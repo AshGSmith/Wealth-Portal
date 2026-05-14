@@ -158,8 +158,8 @@ export default function UsersManager({
                     <div className="grid gap-2 sm:grid-cols-2">
                       <DetailCard label="Name" value={user.name} />
                       <DetailCard label="Email" value={user.email} />
-                      <DetailCard label="Date of birth" value={user.dateOfBirth ?? 'Not set'} />
-                      <DetailCard label="Linked users" value={user.linkedUserIds.length > 0 ? String(user.linkedUserIds.length) : 'None'} />
+                      <DetailCard label="Date of Birth" value={user.dateOfBirth ?? 'Not set'} />
+                      <DetailCard label="Linked Users" value={user.linkedUserIds.length > 0 ? String(user.linkedUserIds.length) : 'None'} />
                     </div>
 
                     <EditUserForm
@@ -281,12 +281,12 @@ function CreateUserForm({
     >
       <Field label="Name" name="name" required />
       <Field label="Email" name="email" type="email" required />
-      <Field label="Date of birth" name="dateOfBirth" type="date" />
+      <Field label="Date of Birth" name="dateOfBirth" type="date" />
 
       <div className="rounded-xl border px-3 py-2.5" style={{ borderColor: 'var(--border)', background: 'var(--background)' }}>
         <label className="flex items-center gap-2 text-sm" style={{ color: 'var(--muted)' }}>
           <input type="checkbox" name="isAdmin" className="h-4 w-4 rounded" />
-          Admin user
+          Admin User
         </label>
       </div>
       <div className="rounded-xl border px-3 py-2.5" style={{ borderColor: 'var(--border)', background: 'var(--background)' }}>
@@ -342,12 +342,12 @@ function EditUserForm({
       <input type="hidden" name="id" value={user.id} />
       <Field label="Name" name="name" defaultValue={user.name} required />
       <Field label="Email" name="email" type="email" defaultValue={user.email} required />
-      <Field label="Date of birth" name="dateOfBirth" type="date" defaultValue={user.dateOfBirth ?? ''} />
+      <Field label="Date of Birth" name="dateOfBirth" type="date" defaultValue={user.dateOfBirth ?? ''} />
 
       <div className="rounded-xl border px-3 py-2.5" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
         <label className="flex items-center gap-2 text-sm" style={{ color: 'var(--muted)' }}>
           <input type="checkbox" name="isAdmin" defaultChecked={user.isAdmin} className="h-4 w-4 rounded" />
-          Admin user
+          Admin User
         </label>
       </div>
       <div className="rounded-xl border px-3 py-2.5" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
@@ -358,7 +358,7 @@ function EditUserForm({
       </div>
 
       <div className="sm:col-span-2 rounded-2xl border p-3" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
-        <p className="mb-2 text-sm font-medium" style={{ color: 'var(--foreground)' }}>Linked users</p>
+        <p className="mb-2 text-sm font-medium" style={{ color: 'var(--foreground)' }}>Linked Users</p>
         {linkableUsers.length === 0 ? (
           <p className="text-sm" style={{ color: 'var(--muted)' }}>No other users available to link.</p>
         ) : (
@@ -415,7 +415,7 @@ function ResetPasswordForm({
     >
       <input type="hidden" name="userId" value={userId} />
       <div>
-        <Field label="Temporary password" name="password" type="password" required />
+        <Field label="Temporary Password" name="password" type="password" required />
         <p className="mt-1 text-xs" style={{ color: 'var(--muted)' }}>
           Set a new password directly for this user.
         </p>

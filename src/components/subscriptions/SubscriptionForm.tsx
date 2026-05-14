@@ -190,6 +190,15 @@ export default function SubscriptionForm({
     setErrors(prev => ({ ...prev, paymentSchedule: undefined, endDate: undefined }));
   }
 
+  function setAutoRenew(autoRenew: boolean) {
+    setForm(prev => ({
+      ...prev,
+      autoRenew,
+      renewalDate: autoRenew ? prev.renewalDate : '',
+    }));
+    setErrors(prev => ({ ...prev, autoRenew: undefined, renewalDate: undefined }));
+  }
+
   function validate(): boolean {
     const nextErrors: Partial<Record<keyof FormState, string>> = {};
     if (!form.name.trim()) nextErrors.name = 'Required';
@@ -316,7 +325,7 @@ export default function SubscriptionForm({
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div>
             <label className="mb-1.5 block text-xs font-medium" style={{ color: 'var(--muted)' }}>
-              Start date <span className="text-rose-500">*</span>
+              Start Date <span className="text-rose-500">*</span>
             </label>
             <input
               type="date"
@@ -339,7 +348,7 @@ export default function SubscriptionForm({
 
         <div>
           <label className="mb-1.5 block text-xs font-medium" style={{ color: 'var(--muted)' }}>
-            Payment day <span className="text-rose-500">*</span>
+            Payment Day <span className="text-rose-500">*</span>
           </label>
           <input
             type="number"
@@ -358,7 +367,7 @@ export default function SubscriptionForm({
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div>
             <label className="mb-1.5 block text-xs font-medium" style={{ color: 'var(--muted)' }}>
-              Category
+              Category <span className="text-rose-500">*</span>
             </label>
             <select value={form.category} onChange={event => set('category', event.target.value as SubscriptionCategory)} className={inputCls} style={{ ...inputStyle, borderColor: errors.category ? '#f43f5e' : 'var(--border)' }}>
               <option value="" disabled>Select a category...</option>
@@ -379,7 +388,7 @@ export default function SubscriptionForm({
         {form.status === 'Cancelled' && (
           <div>
             <label className="mb-1.5 block text-xs font-medium" style={{ color: 'var(--muted)' }}>
-              End date <span className="text-rose-500">*</span>
+              End Date <span className="text-rose-500">*</span>
             </label>
             <input
               type="date"
@@ -395,10 +404,20 @@ export default function SubscriptionForm({
           </div>
         )}
 
+        <label className="flex cursor-pointer items-center gap-3">
+          <input
+            type="checkbox"
+            checked={form.autoRenew}
+            onChange={event => setAutoRenew(event.target.checked)}
+            className="h-4 w-4 cursor-pointer rounded accent-blue-500"
+          />
+          <span className="text-sm font-medium" style={{ color: 'var(--foreground)' }}>Auto Renew</span>
+        </label>
+
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div>
             <label className="mb-1.5 block text-xs font-medium" style={{ color: 'var(--muted)' }}>
-              Contract end
+              Contract End
             </label>
             <input
               type="date"
@@ -408,34 +427,25 @@ export default function SubscriptionForm({
               style={inputStyle}
             />
           </div>
-          <div>
-            <label className="mb-1.5 block text-xs font-medium" style={{ color: 'var(--muted)' }}>
-              Renewal date
-            </label>
-            <input
-              type="date"
-              value={form.renewalDate}
-              onChange={event => set('renewalDate', event.target.value)}
-              disabled={!form.autoRenew}
-              className={inputCls}
-              style={{ ...inputStyle, opacity: form.autoRenew ? 1 : 0.6 }}
-            />
-          </div>
+          {form.autoRenew && (
+            <div>
+              <label className="mb-1.5 block text-xs font-medium" style={{ color: 'var(--muted)' }}>
+                Renewal Date
+              </label>
+              <input
+                type="date"
+                value={form.renewalDate}
+                onChange={event => set('renewalDate', event.target.value)}
+                className={inputCls}
+                style={inputStyle}
+              />
+            </div>
+          )}
         </div>
-
-        <label className="flex cursor-pointer items-center gap-3">
-          <input
-            type="checkbox"
-            checked={form.autoRenew}
-            onChange={event => set('autoRenew', event.target.checked)}
-            className="h-4 w-4 cursor-pointer rounded accent-blue-500"
-          />
-          <span className="text-sm font-medium" style={{ color: 'var(--foreground)' }}>Auto renew</span>
-        </label>
 
         <div>
           <label className="mb-1.5 block text-xs font-medium" style={{ color: 'var(--muted)' }}>
-            Payment method
+            Payment Method
           </label>
           <select value={form.paymentMethod} onChange={event => set('paymentMethod', event.target.value as SubscriptionPaymentMethod)} className={inputCls} style={inputStyle}>
             {PAYMENT_METHODS.map(method => <option key={method} value={method}>{method}</option>)}
@@ -455,7 +465,7 @@ export default function SubscriptionForm({
 
         <div>
           <label className="mb-1.5 block text-xs font-medium" style={{ color: 'var(--muted)' }}>
-            Income source <span className="text-rose-500">*</span>
+            Income Source <span className="text-rose-500">*</span>
           </label>
           <select value={form.incomeSourceId} onChange={event => set('incomeSourceId', event.target.value)} className={inputCls} style={{ ...inputStyle, borderColor: errors.incomeSourceId ? '#f43f5e' : 'var(--border)' }}>
             <option value="" disabled>Select a source...</option>
@@ -471,13 +481,13 @@ export default function SubscriptionForm({
             onChange={event => set('freeTrial', event.target.checked)}
             className="h-4 w-4 cursor-pointer rounded accent-blue-500"
           />
-          <span className="text-sm font-medium" style={{ color: 'var(--foreground)' }}>Free trial</span>
+          <span className="text-sm font-medium" style={{ color: 'var(--foreground)' }}>Free Trial</span>
         </label>
 
         {form.freeTrial && (
           <div>
             <label className="mb-1.5 block text-xs font-medium" style={{ color: 'var(--muted)' }}>
-              Free trial expiry <span className="text-rose-500">*</span>
+              Free Trial Expiry <span className="text-rose-500">*</span>
             </label>
             <input
               type="date"
@@ -497,7 +507,7 @@ export default function SubscriptionForm({
             onChange={event => set('isCriticalExpense', event.target.checked)}
             className="h-4 w-4 cursor-pointer rounded accent-blue-500"
           />
-          <span className="text-sm font-medium" style={{ color: 'var(--foreground)' }}>Critical expense</span>
+          <span className="text-sm font-medium" style={{ color: 'var(--foreground)' }}>Critical Expense</span>
         </label>
 
         <OwnerSelector

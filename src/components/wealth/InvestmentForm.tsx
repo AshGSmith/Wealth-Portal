@@ -359,7 +359,7 @@ export default function InvestmentForm({ investment, open, onClose, onSave, owne
         <div className="space-y-3 rounded-xl border p-3" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
           <div>
             <p className="text-sm font-semibold" style={{ color: 'var(--foreground)' }}>
-              Live market data
+              Live Market Data
             </p>
             <p className="mt-0.5 text-xs" style={{ color: 'var(--muted)' }}>
               Search and select a stock, share, or fund to enable live quotes. Leave off for manual investments.
@@ -386,7 +386,7 @@ export default function InvestmentForm({ investment, open, onClose, onSave, owne
                 background: form.useLiveInstrument ? 'color-mix(in srgb, var(--primary) 10%, transparent)' : 'transparent',
               }}
             >
-              Live instrument
+              Live Instrument
             </button>
             <button
               type="button"
@@ -401,7 +401,7 @@ export default function InvestmentForm({ investment, open, onClose, onSave, owne
                 background: !form.useLiveInstrument ? 'color-mix(in srgb, var(--primary) 10%, transparent)' : 'transparent',
               }}
             >
-              Manual investment
+              Manual Investment
             </button>
           </div>
 
@@ -409,7 +409,7 @@ export default function InvestmentForm({ investment, open, onClose, onSave, owne
             <div className="space-y-3">
               <div>
                 <label className="mb-1.5 block text-xs font-medium" style={{ color: 'var(--muted)' }}>
-                  Search instrument <span className="text-rose-500">*</span>
+                  Search Instrument <span className="text-rose-500">*</span>
                 </label>
                 <input
                   type="text"

@@ -170,10 +170,10 @@ export default function MortgageForm({ mortgage, pots, sources, ownerOptions, cu
           {errors.lender && <p className="mt-1 text-xs text-rose-500">{errors.lender}</p>}
         </div>
 
-        {/* Start date */}
+        {/* Start Date */}
         <div>
           <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--muted)' }}>
-            Start date
+            Start Date
           </label>
           <input type="date" value={form.startDate} onChange={e => set('startDate', e.target.value)}
             className={inputCls}
@@ -184,7 +184,7 @@ export default function MortgageForm({ mortgage, pots, sources, ownerOptions, cu
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div>
             <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--muted)' }}>
-              Monthly payment <span className="text-rose-500">*</span>
+              Monthly Payment <span className="text-rose-500">*</span>
             </label>
             <div className="relative">
               <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm" style={{ color: 'var(--muted)' }}>£</span>
@@ -198,7 +198,7 @@ export default function MortgageForm({ mortgage, pots, sources, ownerOptions, cu
           </div>
           <div>
             <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--muted)' }}>
-              Payment day <span className="text-rose-500">*</span>
+              Payment Day <span className="text-rose-500">*</span>
             </label>
             <input type="number" min="1" max="31" step="1" value={form.paymentDay}
               onChange={e => set('paymentDay', e.target.value)}
@@ -213,7 +213,7 @@ export default function MortgageForm({ mortgage, pots, sources, ownerOptions, cu
           <input type="checkbox" checked={form.proRataFirstPayment} onChange={e => set('proRataFirstPayment', e.target.checked)}
             className="h-4 w-4 rounded accent-blue-500 cursor-pointer" />
           <div>
-            <p className="text-sm font-medium" style={{ color: 'var(--foreground)' }}>Pro-rata first payment</p>
+            <p className="text-sm font-medium" style={{ color: 'var(--foreground)' }}>Pro-Rata First Payment</p>
             <p className="text-xs mt-0.5" style={{ color: 'var(--muted)' }}>Only affects the first budget month</p>
           </div>
         </label>
@@ -232,7 +232,7 @@ export default function MortgageForm({ mortgage, pots, sources, ownerOptions, cu
 
         <div>
           <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--muted)' }}>
-            Income source <span className="text-rose-500">*</span>
+            Income Source <span className="text-rose-500">*</span>
           </label>
           <select value={form.incomeSourceId} onChange={e => set('incomeSourceId', e.target.value)} className={inputCls}
             style={{ ...inputStyle, borderColor: errors.incomeSourceId ? '#f43f5e' : 'var(--border)' }}>
@@ -245,13 +245,13 @@ export default function MortgageForm({ mortgage, pots, sources, ownerOptions, cu
         <label className="flex items-center gap-3 cursor-pointer">
           <input type="checkbox" checked={form.isCriticalExpense} onChange={e => set('isCriticalExpense', e.target.checked)}
             className="h-4 w-4 rounded accent-blue-500 cursor-pointer" />
-          <span className="text-sm font-medium" style={{ color: 'var(--foreground)' }}>Critical expense</span>
+          <span className="text-sm font-medium" style={{ color: 'var(--foreground)' }}>Critical Expense</span>
         </label>
 
-        {/* Amount borrowed */}
+        {/* Amount Borrowed */}
         <div>
           <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--muted)' }}>
-            Amount borrowed <span className="text-rose-500">*</span>
+            Amount Borrowed <span className="text-rose-500">*</span>
           </label>
           <div className="relative">
             <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm" style={{ color: 'var(--muted)' }}>£</span>
@@ -264,10 +264,10 @@ export default function MortgageForm({ mortgage, pots, sources, ownerOptions, cu
           {errors.amountBorrowed && <p className="mt-1 text-xs text-rose-500">{errors.amountBorrowed}</p>}
         </div>
 
-        {/* Fixed term */}
+        {/* Fixed Term */}
         <div>
           <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--muted)' }}>
-            Fixed term (months)
+            Fixed Term (months)
           </label>
           <input type="number" min="1" step="1" value={form.fixedTermMonths}
             onChange={e => set('fixedTermMonths', e.target.value)}
@@ -281,11 +281,11 @@ export default function MortgageForm({ mortgage, pots, sources, ownerOptions, cu
           )}
         </div>
 
-        {/* Interest rate / Term */}
+        {/* Interest Rate / Term */}
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--muted)' }}>
-              Interest rate <span className="text-rose-500">*</span>
+              Interest Rate <span className="text-rose-500">*</span>
             </label>
             <div className="relative">
               <input type="number" min="0" step="0.01" value={form.interestRate}

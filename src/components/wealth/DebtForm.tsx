@@ -169,7 +169,7 @@ export default function DebtForm({ debt, open, onClose, onSave, ownerOptions, cu
       <div className="space-y-4 px-5 py-5">
         <div>
           <label className="mb-1.5 block text-xs font-medium" style={{ color: 'var(--muted)' }}>
-            Debt type <span className="text-rose-500">*</span>
+            Debt Type <span className="text-rose-500">*</span>
           </label>
           <select
             value={form.type}
@@ -249,7 +249,7 @@ export default function DebtForm({ debt, open, onClose, onSave, ownerOptions, cu
 
           <div>
             <label className="mb-1.5 block text-xs font-medium" style={{ color: 'var(--muted)' }}>
-              Current balance <span className="text-rose-500">*</span>
+              Current Balance <span className="text-rose-500">*</span>
             </label>
             <div className="relative">
               <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm" style={{ color: 'var(--muted)' }}>£</span>
@@ -282,7 +282,7 @@ export default function DebtForm({ debt, open, onClose, onSave, ownerOptions, cu
         <div className={`grid gap-3 ${isCreditCard ? 'grid-cols-1' : 'grid-cols-2'}`}>
           <div>
             <label className="mb-1.5 block text-xs font-medium" style={{ color: 'var(--muted)' }}>
-              Interest rate {isCreditCard ? <span style={{ color: 'var(--muted)' }}>(optional)</span> : <span className="text-rose-500">*</span>}
+              Interest Rate {isCreditCard ? <span style={{ color: 'var(--muted)' }}>(optional)</span> : <span className="text-rose-500">*</span>}
             </label>
             <div className="relative">
               <input
@@ -323,7 +323,7 @@ export default function DebtForm({ debt, open, onClose, onSave, ownerOptions, cu
         {!isCreditCard && (
           <div>
             <label className="mb-1.5 block text-xs font-medium" style={{ color: 'var(--muted)' }}>
-              Start date <span className="text-rose-500">*</span>
+              Start Date <span className="text-rose-500">*</span>
             </label>
             <input
               type="date"
@@ -335,7 +335,7 @@ export default function DebtForm({ debt, open, onClose, onSave, ownerOptions, cu
             {errors.startDate && <p className="mt-1 text-xs text-rose-500">{errors.startDate}</p>}
             {endDate && !errors.startDate && !errors.termMonths && (
               <p className="mt-1 text-xs" style={{ color: 'var(--muted)' }}>
-                End date: {new Date(endDate + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+                End Date: {new Date(endDate + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
               </p>
             )}
           </div>

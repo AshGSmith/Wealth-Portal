@@ -180,14 +180,14 @@ export default function ExpenseForm({ expense, pots, sources, ownerOptions, curr
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--muted)' }}>
-              Start date <span style={{ color: 'var(--muted)' }}>(optional)</span>
+              Start Date <span style={{ color: 'var(--muted)' }}>(optional)</span>
             </label>
             <input type="date" value={form.startDate} onChange={e => set('startDate', e.target.value)}
               className={inputCls} style={inputStyle} />
           </div>
           <div>
             <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--muted)' }}>
-              End date <span style={{ color: 'var(--muted)' }}>(optional)</span>
+              End Date <span style={{ color: 'var(--muted)' }}>(optional)</span>
             </label>
             <input type="date" value={form.endDate} onChange={e => set('endDate', e.target.value)}
               className={inputCls} style={{ ...inputStyle, borderColor: errors.endDate ? '#f43f5e' : 'var(--border)' }} />
@@ -200,7 +200,7 @@ export default function ExpenseForm({ expense, pots, sources, ownerOptions, curr
           <input type="checkbox" checked={form.isCritical} onChange={e => set('isCritical', e.target.checked)}
             className="h-4 w-4 rounded accent-blue-500 cursor-pointer" />
           <div>
-            <p className="text-sm font-medium" style={{ color: 'var(--foreground)' }}>Critical expense</p>
+            <p className="text-sm font-medium" style={{ color: 'var(--foreground)' }}>Critical Expense</p>
             <p className="text-xs mt-0.5" style={{ color: 'var(--muted)' }}>Non-negotiable — always highlighted</p>
           </div>
         </label>
@@ -209,7 +209,7 @@ export default function ExpenseForm({ expense, pots, sources, ownerOptions, curr
           <input type="checkbox" checked={form.oneOffPayment} onChange={e => set('oneOffPayment', e.target.checked)}
             className="h-4 w-4 rounded accent-blue-500 cursor-pointer" />
           <div>
-            <p className="text-sm font-medium" style={{ color: 'var(--foreground)' }}>One off payment</p>
+            <p className="text-sm font-medium" style={{ color: 'var(--foreground)' }}>One-Off Payment</p>
             <p className="text-xs mt-0.5" style={{ color: 'var(--muted)' }}>
               Apply this expense to one budget only, then stop including it in future budgets
             </p>

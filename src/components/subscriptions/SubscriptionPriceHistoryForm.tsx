@@ -99,7 +99,7 @@ export default function SubscriptionPriceHistoryForm({ subscription, open, onClo
       <div className="space-y-4 px-5 py-5">
         <div>
           <label className="mb-1.5 block text-xs font-medium" style={{ color: 'var(--muted)' }}>
-            New cost <span className="text-rose-500">*</span>
+            New Cost <span className="text-rose-500">*</span>
           </label>
           <input
             type="number"
@@ -124,7 +124,7 @@ export default function SubscriptionPriceHistoryForm({ subscription, open, onClo
 
         <div>
           <label className="mb-1.5 block text-xs font-medium" style={{ color: 'var(--muted)' }}>
-            Effective date <span className="text-rose-500">*</span>
+            Effective Date <span className="text-rose-500">*</span>
           </label>
           <input
             type="date"

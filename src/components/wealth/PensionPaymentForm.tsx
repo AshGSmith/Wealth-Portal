@@ -162,7 +162,7 @@ export default function PensionPaymentForm({ pensionId, pensionName, open, onClo
 
         <div className="space-y-3 rounded-xl border p-3" style={{ borderColor: 'var(--border)' }}>
           <label className="flex items-center justify-between gap-3">
-            <span className="text-sm font-medium" style={{ color: 'var(--foreground)' }}>Employee contribution</span>
+            <span className="text-sm font-medium" style={{ color: 'var(--foreground)' }}>Employee Contribution</span>
             <input
               type="checkbox"
               checked={form.employeeEnabled}
@@ -191,7 +191,7 @@ export default function PensionPaymentForm({ pensionId, pensionName, open, onClo
 
         <div className="space-y-3 rounded-xl border p-3" style={{ borderColor: 'var(--border)' }}>
           <label className="flex items-center justify-between gap-3">
-            <span className="text-sm font-medium" style={{ color: 'var(--foreground)' }}>Employer contribution</span>
+            <span className="text-sm font-medium" style={{ color: 'var(--foreground)' }}>Employer Contribution</span>
             <input
               type="checkbox"
               checked={form.employerEnabled}

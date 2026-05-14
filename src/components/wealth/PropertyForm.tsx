@@ -160,10 +160,10 @@ export default function PropertyForm({ property, mortgages, ownerOptions, curren
           {errors.address && <p className="mt-1 text-xs text-rose-500">{errors.address}</p>}
         </div>
 
-        {/* Purchase date */}
+        {/* Purchase Date */}
         <div>
           <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--muted)' }}>
-            Purchase date <span className="text-rose-500">*</span>
+            Purchase Date <span className="text-rose-500">*</span>
           </label>
           <input type="date" value={form.purchaseDate} onChange={e => set('purchaseDate', e.target.value)}
             className={inputCls}
@@ -171,11 +171,11 @@ export default function PropertyForm({ property, mortgages, ownerOptions, curren
           {errors.purchaseDate && <p className="mt-1 text-xs text-rose-500">{errors.purchaseDate}</p>}
         </div>
 
-        {/* Purchase price / Current value */}
+        {/* Purchase Price / Current Value */}
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--muted)' }}>
-              Purchase price <span className="text-rose-500">*</span>
+              Purchase Price <span className="text-rose-500">*</span>
             </label>
             <div className="relative">
               <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm" style={{ color: 'var(--muted)' }}>£</span>
@@ -190,7 +190,7 @@ export default function PropertyForm({ property, mortgages, ownerOptions, curren
 
           <div>
             <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--muted)' }}>
-              Current value <span className="text-rose-500">*</span>
+              Current Value <span className="text-rose-500">*</span>
             </label>
             <div className="relative">
               <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm" style={{ color: 'var(--muted)' }}>£</span>
@@ -237,7 +237,7 @@ export default function PropertyForm({ property, mortgages, ownerOptions, curren
               onChange={e => set('isMainResidence', e.target.checked)}
               className="h-4 w-4 rounded accent-blue-500 cursor-pointer" />
             <div>
-              <p className="text-sm font-medium" style={{ color: 'var(--foreground)' }}>Main residence</p>
+              <p className="text-sm font-medium" style={{ color: 'var(--foreground)' }}>Main Residence</p>
               <p className="text-xs mt-0.5" style={{ color: 'var(--muted)' }}>Your primary home</p>
             </div>
           </label>
@@ -247,7 +247,7 @@ export default function PropertyForm({ property, mortgages, ownerOptions, curren
               onChange={e => set('isRental', e.target.checked)}
               className="h-4 w-4 rounded accent-blue-500 cursor-pointer" />
             <div>
-              <p className="text-sm font-medium" style={{ color: 'var(--foreground)' }}>Rental property</p>
+              <p className="text-sm font-medium" style={{ color: 'var(--foreground)' }}>Rental Property</p>
               <p className="text-xs mt-0.5" style={{ color: 'var(--muted)' }}>Generates rental income</p>
             </div>
           </label>

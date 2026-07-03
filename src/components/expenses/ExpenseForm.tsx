@@ -72,7 +72,7 @@ export default function ExpenseForm({ expense, pots, sources, ownerOptions, curr
     const errs: typeof errors = {};
     if (!form.name.trim())            errs.name   = 'Required';
     if (!form.amount.trim())          errs.amount = 'Required';
-    else if (Number(form.amount) <= 0) errs.amount = 'Must be > 0';
+    else if (!Number.isFinite(Number(form.amount)) || Number(form.amount) < 0) errs.amount = 'Must be 0 or more';
     if (!form.potId)                  errs.potId  = 'Required';
     if (!form.incomeSourceId)         errs.incomeSourceId = 'Required';
     if (form.ownerUserIds.length === 0) errs.ownerUserIds = 'Required';

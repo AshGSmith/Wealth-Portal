@@ -948,6 +948,10 @@ function decorateBudgetItemsWithLabels(
   };
 }
 
+function localBudgetChanged(before: LocalBudget, after: LocalBudget): boolean {
+  return JSON.stringify(before) !== JSON.stringify(after);
+}
+
 function normalizePersistedDataSnapshot(
   snapshot: PersistedAppData,
   fallbackUserId: string | null,
@@ -1497,6 +1501,57 @@ export function AppProvider({
           visibleSources,
         );
       }));
+    }, 0);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [
+    currentUserId,
+    hydrated,
+    visibleExpenses,
+    visibleMortgages,
+    visiblePots,
+    visibleSavingAmountHistory,
+    visibleSavings,
+    visibleSources,
+    visibleSubscriptionPriceHistory,
+    visibleSubscriptions,
+  ]);
+
+  useEffect(() => {
+    if (!hydrated || !currentUserId) return;
+
+    const timeoutId = window.setTimeout(() => {
+      setBudgets(prev => {
+        let changed = false;
+        const next = prev.map(budget => {
+          if (budget.locked) return budget;
+
+          const refreshed = decorateBudgetItemsWithLabels(
+            sanitizeBudgetForOneOffExpenses(
+              refreshBudget(
+                budget,
+                visibleExpenses,
+                visibleSavings,
+                visibleSavingAmountHistory,
+                visibleSubscriptions,
+                visibleSubscriptionPriceHistory,
+                visibleMortgages,
+              ),
+              visibleExpenses,
+            ),
+            visiblePots,
+            visibleSources,
+          );
+
+          if (!localBudgetChanged(budget, refreshed)) return budget;
+          changed = true;
+          return refreshed;
+        });
+
+        return changed ? next : prev;
+      });
     }, 0);
 
     return () => {
